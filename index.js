@@ -9,10 +9,9 @@ require("dotenv").config();
 const app = express();
 app.use(bodyParser.json());
 
-const CERT_PATH = path.join(__dirname, "certs");
-const cert = fs.readFileSync(path.join(CERT_PATH, "40772493000100.cer"));
-const key = fs.readFileSync(path.join(CERT_PATH, "api-pix-igmeventos.key"));
-const ca = fs.readFileSync(path.join(CERT_PATH, "CadeiaCompletaSicredi.cer"));
+const cert = fs.readFileSync("/etc/secrets/cert.cer");
+const key = fs.readFileSync("/etc/secrets/api.key");
+const ca = fs.readFileSync("/etc/secrets/ca.cer");
 
 const SICREDI_API = "https://api-pix.sicredi.com.br/api/v2";
 const SICREDI_TOKEN_URL = "https://api-pix.sicredi.com.br/oauth/token";
