@@ -13,8 +13,8 @@ const cert = fs.readFileSync("/etc/secrets/cert.cer");
 const key = fs.readFileSync("/etc/secrets/api.key");
 const ca = fs.readFileSync("/etc/secrets/ca.cer");
 
-const SICREDI_API = "https://api-pix.sicredi.com.br/api/v2";
-const SICREDI_TOKEN_URL = "https://api-pix.sicredi.com.br/oauth/token";
+const SICREDI_API = "https://api-pix-h.sicredi.com.br/api/v2";
+const SICREDI_TOKEN_URL = "https://api-pix-h.sicredi.com.br/oauth/token";
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const PIX_KEY = process.env.PIX_KEY;
