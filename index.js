@@ -77,6 +77,7 @@ app.post("/gerar-pix", async (req, res) => {
     });
   } catch (error) {
     console.error(error.response?.data || error.message);
+    console.log(error.message)
     res.status(500).json({ erro: "Falha ao gerar cobranca PIX" });
   }
 });
