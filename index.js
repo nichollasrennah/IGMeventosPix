@@ -20,6 +20,8 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const PIX_KEY = process.env.PIX_KEY;
 
+console.log(cert.toString())
+
 async function obterToken() {
   const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
   const response = await axios.post(
