@@ -9,9 +9,10 @@ require("dotenv").config();
 const app = express();
 app.use(bodyParser.json());
 
-const cert = fs.readFileSync("/etc/secrets/cert.cer");
-const key = fs.readFileSync("/etc/secrets/api.key");
-const ca = fs.readFileSync("/etc/secrets/ca.cer");
+const CERT_PATH = path.join(__dirname, "certs");
+const cert = fs.readFileSync(path.join(CERT_PATH, "cert.cer"));
+const key = fs.readFileSync(path.join(CERT_PATH, "api.key"));
+const ca = fs.readFileSync(path.join(CERT_PATH, "ca.cer"));
 
 const SICREDI_API = "https://api-pix-h.sicredi.com.br/api/v2";
 const SICREDI_TOKEN_URL = "https://api-pix-h.sicredi.com.br/oauth/token";
