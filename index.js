@@ -20,9 +20,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const PIX_KEY = process.env.PIX_KEY;
 
-console.log("<")
-console.log(ca.toString())
-console.log(">")
+console.log(key.toString())
 
 async function obterToken() {
   const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
@@ -77,7 +75,6 @@ app.post("/gerar-pix", async (req, res) => {
     });
   } catch (error) {
     console.error(error.response?.data || error.message);
-    console.log(error.message)
     res.status(500).json({ erro: "Falha ao gerar cobranca PIX" });
   }
 });
