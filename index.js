@@ -12,7 +12,7 @@ app.use(bodyParser.json());
 const CERT_PATH = path.join(__dirname, "certs");
 const cert = fs.readFileSync(path.join(CERT_PATH, "cert.cer"));
 const key = fs.readFileSync(path.join(CERT_PATH, "api.key"));
-const ca = fs.readFileSync(path.join(CERT_PATH, "ca.cer"));
+const ca = fs.readFileSync(path.join(__dirname, "certs", "ca-homolog-sicredi.pem"));
 
 const SICREDI_API = "https://api-pix-h.sicredi.com.br/api/v2";
 const SICREDI_TOKEN_URL = "https://api-pix-h.sicredi.com.br/oauth/token";
