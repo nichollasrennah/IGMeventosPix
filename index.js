@@ -48,8 +48,13 @@ function carregarCertificados() {
 
 const certificates = carregarCertificados();
 
-const SICREDI_API = "https://api-pix-h.sicredi.com.br/api/v2";
-const SICREDI_TOKEN_URL = "https://api-pix-h.sicredi.com.br/oauth/token";
+const SICREDI_API = process.env.SICREDI_ENV === 'prod' ? 
+  "https://api-pix.sicredi.com.br/api/v2" : 
+  "https://api-pix-h.sicredi.com.br/api/v2";
+
+const SICREDI_TOKEN_URL = process.env.SICREDI_ENV === 'prod' ? 
+  "https://api-pix.sicredi.com.br/oauth/token" : 
+  "https://api-pix-h.sicredi.com.br/oauth/token";
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const PIX_KEY = process.env.PIX_KEY;
@@ -100,28 +105,48 @@ async function obterToken(tentativa = 1) {
     
     // Diferentes configurações de escopo para tentar
     const escopos = [
-      "cob.read+cob.write+pix.read",     // Formato oficial da documentação
-      "cob.write+cob.read+pix.read",     // Variação da ordem
-      "cob.read cob.write pix.read",     // Formato com espaços
-      "cob.write+cob.read",              // Sem pix.read
-      "cob.read+cob.write"               // Sem pix.read (alternativo)
+      "cob.write+cob.read+webhook.read+webhook.write", // Escopo completo da collection
+      "cob.read+cob.write+pix.read",                   // Formato da documentação
+      "cob.write+cob.read+pix.read",                   // Variação da ordem
+      "cob.write+cob.read",                            // Básico
+      "cob.read+cob.write"                             // Básico alternativo
     ];
     
     const escopo = escopos[Math.min(tentativa - 1, escopos.length - 1)];
-    const body = escopo ? 
-      `grant_type=client_credentials&scope=${escopo}` : 
-      `grant_type=client_credentials`;
     
-    console.log(`📋 Tentando escopo: "${escopo || 'sem escopo'}"`);
+    let url, body, headers;
+    
+    if (tentativa <= 3) {
+      // Primeiras 3 tentativas: formato tradicional (body)
+      url = SICREDI_TOKEN_URL;
+      body = escopo ? 
+        `grant_type=client_credentials&scope=${escopo}` : 
+        `grant_type=client_credentials`;
+      headers = {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      };
+    } else {
+      // Tentativas 4-5: formato query parameters (como no Postman)
+      const params = new URLSearchParams({
+        grant_type: 'client_credentials',
+        ...(escopo && { scope: escopo })
+      });
+      url = `${SICREDI_TOKEN_URL}?${params.toString()}`;
+      body = '';
+      headers = {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/json", // Postman usa JSON
+      };
+    }
+    
+    console.log(`📋 Tentando escopo: "${escopo || 'sem escopo'}" - Método: ${tentativa <= 3 ? 'BODY' : 'QUERY'}`);
     
     const response = await axios.post(
-      SICREDI_TOKEN_URL,
+      url,
       body,
       {
-        headers: {
-          Authorization: `Basic ${credentials}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+        headers,
         httpsAgent,
         timeout: 10000, // 10 segundos de timeout
       }
@@ -191,13 +216,24 @@ app.use((req, res, next) => {
 
 // Endpoint de health check
 app.get("/health", (req, res) => {
+  const isProducao = process.env.SICREDI_ENV === 'prod';
+  
   res.json({ 
     status: "ok", 
     timestamp: new Date().toISOString(),
+    ambiente: isProducao ? 'produção' : 'homologação',
+    apis: {
+      token_url: isProducao ? 'https://api-pix.sicredi.com.br/oauth/token' : 'https://api-pix-h.sicredi.com.br/oauth/token',
+      pix_url: isProducao ? 'https://api-pix.sicredi.com.br/api/v2' : 'https://api-pix-h.sicredi.com.br/api/v2'
+    },
     certificates: {
       cert: !!certificates.cert,
       key: !!certificates.key,
       ca: !!certificates.ca
+    },
+    configuracao: {
+      chave_pix_obrigatoria: isProducao,
+      chave_configurada: PIX_KEY ? 'sim' : 'não'
     }
   });
 });
@@ -236,6 +272,8 @@ app.get("/test-auth", async (req, res) => {
   }
 });
 
+// Substitua a função /gerar-pix por esta versão corrigida:
+
 app.post("/gerar-pix", async (req, res) => {
   try {
     const { nome, cpf, valor, chave_pix, descricao } = req.body;
@@ -247,19 +285,71 @@ app.post("/gerar-pix", async (req, res) => {
       });
     }
     
-    console.log(`💰 Gerando PIX para ${nome} - R$ ${valor}`);
+    // Validação do CPF (apenas números, 11 dígitos)
+    const cpfLimpo = cpf.replace(/\D/g, '');
+    if (cpfLimpo.length !== 11) {
+      return res.status(400).json({ 
+        erro: "CPF deve conter exatamente 11 dígitos numéricos" 
+      });
+    }
+    
+    // Validação do valor
+    const valorNumerico = parseFloat(valor);
+    if (isNaN(valorNumerico) || valorNumerico <= 0) {
+      return res.status(400).json({ 
+        erro: "Valor deve ser um número positivo" 
+      });
+    }
+    
+    // Determinar chave PIX baseada no ambiente
+    let chavePixFinal;
+    const isProducao = process.env.SICREDI_ENV === 'prod';
+    
+    if (isProducao) {
+      // Em produção: chave é obrigatória
+      chavePixFinal = chave_pix || PIX_KEY;
+      if (!chavePixFinal) {
+        return res.status(400).json({
+          erro: "Chave PIX é obrigatória em produção. Configure PIX_KEY no .env ou envie chave_pix na requisição.",
+          ambiente: "produção"
+        });
+      }
+    } else {
+      // Em homologação: chave é opcional mas recomendada
+      chavePixFinal = chave_pix || PIX_KEY;
+      console.log(`🧪 Ambiente: HOMOLOGAÇÃO - Chave PIX: ${chavePixFinal ? 'fornecida' : 'não obrigatória'}`);
+    }
+    
+    console.log(`💰 Gerando PIX para ${nome} - R$ ${valorNumerico.toFixed(2)} - Ambiente: ${isProducao ? 'PRODUÇÃO' : 'HOMOLOGAÇÃO'}`);
     
     const token = await obterToken();
 
+    // Payload corrigido seguindo a especificação PIX do Banco Central
     const payload = {
-      calendario: { expiracao: 3600 },
-      devedor: { cpf, nome },
-      valor: { original: parseFloat(valor).toFixed(2) },
-      chave: chave_pix || PIX_KEY,
-      solicitacaoPagador: descricao || "Pagamento via PIX",
+      calendario: { 
+        expiracao: 3600 // em segundos
+      },
+      devedor: { 
+        cpf: cpfLimpo, // CPF apenas com números
+        nome: nome.trim() // Remove espaços extras
+      },
+      valor: { 
+        original: valorNumerico.toFixed(2) // Garantir 2 casas decimais
+      },
+      solicitacaoPagador: (descricao || "Pagamento via PIX").substring(0, 140) // Limite de caracteres
     };
+    
+    // Adicionar chave apenas se fornecida
+    if (chavePixFinal) {
+      payload.chave = chavePixFinal.trim();
+      console.log(`🔑 Usando chave PIX: ${chavePixFinal}`);
+    } else {
+      console.log(`🧪 Gerando PIX sem chave específica (homologação)`);
+    }
 
+    console.log("📤 Payload a ser enviado:", JSON.stringify(payload, null, 2));
     console.log("📤 Enviando cobrança para Sicredi...");
+    
     const response = await fazerRequisicaoSicredi(
       `${SICREDI_API}/cob`,
       {
@@ -268,12 +358,16 @@ app.post("/gerar-pix", async (req, res) => {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "Accept": "application/json"
         },
       }
     );
 
     const { txid } = response.data;
     console.log(`✅ Cobrança criada - TXID: ${txid}`);
+    
+    // Aguarda um momento antes de consultar a cobrança
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     console.log("📋 Buscando dados da cobrança...");
     const cobranca = await fazerRequisicaoSicredi(
@@ -282,7 +376,8 @@ app.post("/gerar-pix", async (req, res) => {
         method: 'GET',
         headers: { 
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Accept": "application/json"
         },
       }
     );
@@ -295,7 +390,10 @@ app.post("/gerar-pix", async (req, res) => {
       pixCopiaECola: cobranca.data.pixCopiaECola,
       valor: payload.valor.original,
       devedor: payload.devedor,
-      expiracao: payload.calendario.expiracao
+      expiracao: payload.calendario.expiracao,
+      ambiente: isProducao ? 'produção' : 'homologação',
+      chave_utilizada: chavePixFinal || 'nenhuma (homologação)',
+      qrcode: cobranca.data.qrcode || null // Caso tenha QR Code
     });
     
   } catch (error) {
@@ -303,19 +401,94 @@ app.post("/gerar-pix", async (req, res) => {
       message: error.message,
       code: error.code,
       response: error.response?.data,
-      status: error.response?.status
+      status: error.response?.status,
+      url: error.config?.url
     });
     
-    const statusCode = error.response?.status || 500;
-    const errorMessage = error.response?.data?.message || error.message || "Falha ao gerar cobrança PIX";
+    // Log das violações específicas se disponível
+    if (error.response?.data?.violacoes) {
+      console.error("📋 Violações do schema:", error.response.data.violacoes);
+    }
     
-    res.status(statusCode).json({ 
+    const statusCode = error.response?.status || 500;
+    let errorMessage = "Falha ao gerar cobrança PIX";
+    
+    // Mensagens de erro mais específicas
+    if (error.response?.data?.detail) {
+      errorMessage = error.response.data.detail;
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    const responseError = {
       erro: errorMessage,
-      detalhes: process.env.NODE_ENV === 'development' ? {
+      ambiente: process.env.SICREDI_ENV === 'prod' ? 'produção' : 'homologação',
+      timestamp: new Date().toISOString()
+    };
+    
+    // Em desenvolvimento, adiciona mais detalhes
+    if (process.env.NODE_ENV === 'development') {
+      responseError.detalhes = {
         code: error.code,
         status: error.response?.status,
-        data: error.response?.data
-      } : undefined
+        data: error.response?.data,
+        violacoes: error.response?.data?.violacoes
+      };
+    }
+    
+    res.status(statusCode).json(responseError);
+  }
+});
+
+// Também adicione este endpoint para debug do payload:
+app.post("/debug-payload", (req, res) => {
+  try {
+    const { nome, cpf, valor, chave_pix, descricao } = req.body;
+    
+    // Validações e processamento igual ao endpoint principal
+    const cpfLimpo = cpf?.replace(/\D/g, '') || '';
+    const valorNumerico = parseFloat(valor) || 0;
+    const chavePixFinal = chave_pix || PIX_KEY;
+    
+    const payload = {
+      calendario: { 
+        expiracao: 3600
+      },
+      devedor: { 
+        cpf: cpfLimpo,
+        nome: nome?.trim() || ''
+      },
+      valor: { 
+        original: valorNumerico.toFixed(2)
+      },
+      solicitacaoPagador: (descricao || "Pagamento via PIX").substring(0, 140)
+    };
+    
+    if (chavePixFinal) {
+      payload.chave = chavePixFinal.trim();
+    }
+    
+    // Validações
+    const validacoes = {
+      cpf_valido: cpfLimpo.length === 11,
+      valor_valido: valorNumerico > 0,
+      nome_valido: nome && nome.trim().length > 0,
+      chave_presente: !!chavePixFinal
+    };
+    
+    res.json({
+      payload_que_seria_enviado: payload,
+      validacoes,
+      ambiente: process.env.SICREDI_ENV === 'prod' ? 'produção' : 'homologação',
+      todas_validacoes_ok: Object.values(validacoes).every(v => v === true)
+    });
+    
+  } catch (error) {
+    res.status(400).json({
+      erro: "Erro ao processar payload",
+      detalhes: error.message
     });
   }
 });
@@ -352,6 +525,55 @@ app.get("/consultar-pix/:txid", async (req, res) => {
     
     res.status(statusCode).json({ 
       erro: errorMessage 
+    });
+  }
+});
+
+// Endpoint para testar chaves PIX disponíveis
+app.get("/listar-chaves", async (req, res) => {
+  try {
+    const token = await obterToken();
+    
+    console.log("🔑 Listando chaves PIX disponíveis...");
+    
+    // Tenta buscar cobranças recentes para identificar chaves válidas
+    const agora = new Date();
+    const ontemISO = new Date(agora.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const agoraISO = agora.toISOString();
+    
+    const cobrancas = await fazerRequisicaoSicredi(
+      `${SICREDI_API}/cob?inicio=${ontemISO}&fim=${agoraISO}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+      }
+    );
+    
+    // Extrai chaves únicas das cobranças
+    const chavesEncontradas = [...new Set(
+      cobrancas.data.cobs?.map(cob => cob.chave).filter(Boolean) || []
+    )];
+    
+    res.json({
+      sucesso: true,
+      message: "Chaves encontradas nas cobranças recentes",
+      chaves_encontradas: chavesEncontradas,
+      chave_configurada: PIX_KEY || "NÃO CONFIGURRADA",
+      dica: "Se não há chaves, você precisa cadastrar uma chave PIX no Sicredi primeiro"
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro ao listar chaves:", error.message);
+    
+    res.json({
+      sucesso: false,
+      erro: "Não foi possível listar chaves",
+      chave_configurada: PIX_KEY || "NÃO CONFIGURADA",
+      dica: "Verifique se sua chave PIX está cadastrada no Sicredi",
+      detalhes: error.response?.data
     });
   }
 });
