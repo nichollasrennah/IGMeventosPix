@@ -514,7 +514,7 @@ app.get("/consultar-pix/:txid", async (req, res) => {
     
     res.json({
       sucesso: true,
-      dados: cobranca.response.data
+      dados: cobranca.data
     });
     
   } catch (error) {
