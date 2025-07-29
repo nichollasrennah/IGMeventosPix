@@ -1,3 +1,7 @@
+// =====================================================
+// CONFIGURAÇÃO MULTI-AMBIENTE - Substitua no início do seu middleware
+// =====================================================
+
 const express = require("express");
 const https = require("https");
 const fs = require("fs");
@@ -11,15 +15,163 @@ app.use(bodyParser.json());
 
 const CERT_PATH = path.join(__dirname, "certs");
 
-// Função para carregar certificados com tratamento de erro
+// =====================================================
+// CONFIGURAÇÃO DE AMBIENTES
+// =====================================================
+
+// Determinar ambiente atual
+const AMBIENTE_ATUAL = process.env.SICREDI_ENV || 'homolog'; // 'prod' ou 'homolog'
+const isProducao = AMBIENTE_ATUAL === 'prod';
+
+console.log(`🌍 Ambiente atual: ${isProducao ? 'PRODUÇÃO' : 'HOMOLOGAÇÃO'}`);
+
+// Configurações por ambiente
+const CONFIG_AMBIENTES = {
+  homolog: {
+    // URLs da API Sicredi - Homologação
+    api_url: process.env.SICREDI_HOMOLOG_API_URL || "https://api-pix-h.sicredi.com.br/api/v2",
+    token_url: process.env.SICREDI_HOMOLOG_TOKEN_URL || "https://api-pix-h.sicredi.com.br/oauth/token",
+    
+    // Credenciais - Homologação
+    client_id: process.env.SICREDI_HOMOLOG_CLIENT_ID,
+    client_secret: process.env.SICREDI_HOMOLOG_CLIENT_SECRET,
+    
+    // Chave PIX - Homologação
+    pix_key: process.env.SICREDI_HOMOLOG_PIX_KEY,
+    
+    // Configurações específicas
+    timeout: 15000,
+    retry_attempts: 3,
+    ssl_verify: false, // Homologação pode ter SSL mais flexível
+    
+    // Certificados específicos (opcional)
+    cert_prefix: 'homolog_' // ex: homolog_cert.cer, homolog_api.key
+  },
+  
+  prod: {
+    // URLs da API Sicredi - Produção
+    api_url: process.env.SICREDI_PROD_API_URL || "https://api-pix.sicredi.com.br/api/v2",
+    token_url: process.env.SICREDI_PROD_TOKEN_URL || "https://api-pix.sicredi.com.br/oauth/token",
+    
+    // Credenciais - Produção
+    client_id: process.env.SICREDI_PROD_CLIENT_ID,
+    client_secret: process.env.SICREDI_PROD_CLIENT_SECRET,
+    
+    // Chave PIX - Produção
+    pix_key: process.env.SICREDI_PROD_PIX_KEY,
+    
+    // Configurações específicas
+    timeout: 10000,
+    retry_attempts: 2,
+    ssl_verify: true, // Produção sempre com SSL rigoroso
+    
+    // Certificados específicos (opcional)
+    cert_prefix: 'prod_' // ex: prod_cert.cer, prod_api.key
+  }
+};
+
+// Configuração ativa baseada no ambiente
+const CONFIG = CONFIG_AMBIENTES[AMBIENTE_ATUAL];
+
+// Validar configurações obrigatórias
+function validarConfiguracao() {
+  const erros = [];
+  
+  if (!CONFIG.client_id) {
+    erros.push(`SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_CLIENT_ID não configurado`);
+  }
+  
+  if (!CONFIG.client_secret) {
+    erros.push(`SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_CLIENT_SECRET não configurado`);
+  }
+  
+  if (isProducao && !CONFIG.pix_key) {
+    erros.push(`SICREDI_PROD_PIX_KEY é obrigatória em produção`);
+  }
+  
+  if (erros.length > 0) {
+    console.error("❌ Erros de configuração:");
+    erros.forEach(erro => console.error(`   - ${erro}`));
+    console.error("\n📋 Variáveis necessárias no .env:");
+    console.error(getExemploEnv());
+    throw new Error("Configuração inválida para o ambiente " + AMBIENTE_ATUAL);
+  }
+  
+  console.log("✅ Configuração do ambiente validada com sucesso");
+}
+
+// Gerar exemplo de .env
+function getExemploEnv() {
+  return `
+# =====================================================
+# CONFIGURAÇÃO SICREDI - HOMOLOGAÇÃO
+# =====================================================
+SICREDI_ENV=homolog
+SICREDI_HOMOLOG_CLIENT_ID=seu_client_id_homolog
+SICREDI_HOMOLOG_CLIENT_SECRET=seu_client_secret_homolog
+SICREDI_HOMOLOG_PIX_KEY=sua_chave_pix_homolog@sicredi.com.br
+SICREDI_HOMOLOG_API_URL=https://api-pix-h.sicredi.com.br/api/v2
+SICREDI_HOMOLOG_TOKEN_URL=https://api-pix-h.sicredi.com.br/oauth/token
+
+# =====================================================
+# CONFIGURAÇÃO SICREDI - PRODUÇÃO
+# =====================================================
+# SICREDI_ENV=prod
+# SICREDI_PROD_CLIENT_ID=seu_client_id_producao
+# SICREDI_PROD_CLIENT_SECRET=seu_client_secret_producao
+# SICREDI_PROD_PIX_KEY=sua_chave_pix_producao@sicredi.com.br
+# SICREDI_PROD_API_URL=https://api-pix.sicredi.com.br/api/v2
+# SICREDI_PROD_TOKEN_URL=https://api-pix.sicredi.com.br/oauth/token
+
+# =====================================================
+# OUTRAS CONFIGURAÇÕES
+# =====================================================
+PORT=3000
+NODE_ENV=development
+`;
+}
+
+// Executar validação na inicialização
+try {
+  validarConfiguracao();
+} catch (error) {
+  console.error("💥 Falha na inicialização:", error.message);
+  process.exit(1);
+}
+
+// =====================================================
+// FUNÇÃO PARA CARREGAR CERTIFICADOS POR AMBIENTE
+// =====================================================
 function carregarCertificados() {
   try {
-    const cert = fs.readFileSync(path.join(CERT_PATH, "cert.cer"));
-    const key = fs.readFileSync(path.join(CERT_PATH, "api.key"));
+    const certPrefix = CONFIG.cert_prefix || '';
     
-    // Tenta carregar diferentes variações do certificado CA
+    // Tentar carregar certificados específicos do ambiente primeiro
+    let certPath = path.join(CERT_PATH, `${certPrefix}cert.cer`);
+    let keyPath = path.join(CERT_PATH, `${certPrefix}api.key`);
+    
+    // Se não existir, usar certificados padrão
+    if (!fs.existsSync(certPath)) {
+      certPath = path.join(CERT_PATH, "cert.cer");
+    }
+    
+    if (!fs.existsSync(keyPath)) {
+      keyPath = path.join(CERT_PATH, "api.key");
+    }
+    
+    console.log(`🔐 Carregando certificados para ${AMBIENTE_ATUAL}:`);
+    console.log(`   - Cert: ${path.basename(certPath)}`);
+    console.log(`   - Key: ${path.basename(keyPath)}`);
+    
+    const cert = fs.readFileSync(certPath);
+    const key = fs.readFileSync(keyPath);
+    
+    // Carregar CA específico do ambiente ou padrão
     let ca;
     const possiveisCAs = [
+      `${certPrefix}ca-${AMBIENTE_ATUAL}-sicredi.pem`,
+      `${certPrefix}ca.pem`,
+      `ca-${AMBIENTE_ATUAL}-sicredi.pem`,
       "ca-homolog-sicredi.pem",
       "ca-homolog-sicredi.crt", 
       "ca.pem",
@@ -36,10 +188,11 @@ function carregarCertificados() {
     }
     
     if (!ca) {
-      console.warn("⚠️  Nenhum certificado CA encontrado, tentando sem CA");
+      console.warn(`⚠️  Nenhum certificado CA encontrado para ${AMBIENTE_ATUAL}`);
     }
     
     return { cert, key, ca };
+    
   } catch (error) {
     console.error("❌ Erro ao carregar certificados:", error.message);
     throw error;
@@ -48,23 +201,23 @@ function carregarCertificados() {
 
 const certificates = carregarCertificados();
 
-const SICREDI_API = process.env.SICREDI_ENV === 'prod' ? 
-  "https://api-pix.sicredi.com.br/api/v2" : 
-  "https://api-pix-h.sicredi.com.br/api/v2";
-
-const SICREDI_TOKEN_URL = process.env.SICREDI_ENV === 'prod' ? 
-  "https://api-pix.sicredi.com.br/oauth/token" : 
-  "https://api-pix-h.sicredi.com.br/oauth/token";
-const CLIENT_ID = process.env.CLIENT_ID;
-const CLIENT_SECRET = process.env.CLIENT_SECRET;
-const PIX_KEY = process.env.PIX_KEY;
-
-// Função para criar agente HTTPS com diferentes configurações
+// =====================================================
+// FUNÇÃO PARA CRIAR AGENTE HTTPS POR AMBIENTE
+// =====================================================
 function criarAgentHTTPS(tentativa = 1) {
   const baseConfig = {
     cert: certificates.cert,
     key: certificates.key,
   };
+
+  // Configuração SSL baseada no ambiente
+  if (CONFIG.ssl_verify === false && !isProducao) {
+    console.warn("⚠️  SSL verification disabled (homologação apenas)");
+    return new https.Agent({
+      ...baseConfig,
+      rejectUnauthorized: false,
+    });
+  }
 
   switch (tentativa) {
     case 1:
@@ -84,32 +237,42 @@ function criarAgentHTTPS(tentativa = 1) {
     
     case 3:
       // Terceira tentativa: sem verificação SSL (apenas para homologação)
-      console.warn("⚠️  Tentativa sem verificação SSL - USE APENAS EM HOMOLOGAÇÃO");
-      return new https.Agent({
-        ...baseConfig,
-        rejectUnauthorized: false,
-      });
+      if (!isProducao) {
+        console.warn("⚠️  Tentativa sem verificação SSL - HOMOLOGAÇÃO");
+        return new https.Agent({
+          ...baseConfig,
+          rejectUnauthorized: false,
+        });
+      }
+      throw new Error("SSL verification cannot be disabled in production");
     
     default:
       throw new Error("Todas as tentativas de conexão SSL falharam");
   }
 }
 
+// =====================================================
+// FUNÇÃO PARA OBTER TOKEN POR AMBIENTE
+// =====================================================
 async function obterToken(tentativa = 1) {
   try {
-    const credentials = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
+    const credentials = Buffer.from(`${CONFIG.client_id}:${CONFIG.client_secret}`).toString("base64");
     const httpsAgent = criarAgentHTTPS(tentativa);
     
-    console.log(`🔑 Obtendo token (tentativa ${tentativa})...`);
-    console.log(`🔐 Client ID: ${CLIENT_ID ? CLIENT_ID.substring(0, 8) + '...' : 'NÃO CONFIGURADO'}`);
+    console.log(`🔑 Obtendo token ${AMBIENTE_ATUAL} (tentativa ${tentativa})...`);
+    console.log(`🔐 Client ID: ${CONFIG.client_id ? CONFIG.client_id.substring(0, 8) + '...' : 'NÃO CONFIGURADO'}`);
     
-    // Diferentes configurações de escopo para tentar
-    const escopos = [
-      "cob.write+cob.read+webhook.read+webhook.write", // Escopo completo da collection
-      "cob.read+cob.write+pix.read",                   // Formato da documentação
-      "cob.write+cob.read+pix.read",                   // Variação da ordem
-      "cob.write+cob.read",                            // Básico
-      "cob.read+cob.write"                             // Básico alternativo
+    // Escopos baseados no ambiente
+    const escopos = isProducao ? [
+      "cob.write+cob.read+webhook.read+webhook.write", // Produção: escopo completo
+      "cob.read+cob.write+pix.read",
+      "cob.write+cob.read"
+    ] : [
+      "cob.write+cob.read+webhook.read+webhook.write", // Homolog: pode tentar mais variações
+      "cob.read+cob.write+pix.read",
+      "cob.write+cob.read+pix.read",
+      "cob.write+cob.read",
+      "cob.read+cob.write"
     ];
     
     const escopo = escopos[Math.min(tentativa - 1, escopos.length - 1)];
@@ -117,8 +280,7 @@ async function obterToken(tentativa = 1) {
     let url, body, headers;
     
     if (tentativa <= 3) {
-      // Primeiras 3 tentativas: formato tradicional (body)
-      url = SICREDI_TOKEN_URL;
+      url = CONFIG.token_url;
       body = escopo ? 
         `grant_type=client_credentials&scope=${escopo}` : 
         `grant_type=client_credentials`;
@@ -127,20 +289,19 @@ async function obterToken(tentativa = 1) {
         "Content-Type": "application/x-www-form-urlencoded",
       };
     } else {
-      // Tentativas 4-5: formato query parameters (como no Postman)
       const params = new URLSearchParams({
         grant_type: 'client_credentials',
         ...(escopo && { scope: escopo })
       });
-      url = `${SICREDI_TOKEN_URL}?${params.toString()}`;
+      url = `${CONFIG.token_url}?${params.toString()}`;
       body = '';
       headers = {
         Authorization: `Basic ${credentials}`,
-        "Content-Type": "application/json", // Postman usa JSON
+        "Content-Type": "application/json",
       };
     }
     
-    console.log(`📋 Tentando escopo: "${escopo || 'sem escopo'}" - Método: ${tentativa <= 3 ? 'BODY' : 'QUERY'}`);
+    console.log(`📋 ${AMBIENTE_ATUAL.toUpperCase()} - Escopo: "${escopo || 'sem escopo'}" - Método: ${tentativa <= 3 ? 'BODY' : 'QUERY'}`);
     
     const response = await axios.post(
       url,
@@ -148,23 +309,21 @@ async function obterToken(tentativa = 1) {
       {
         headers,
         httpsAgent,
-        timeout: 10000, // 10 segundos de timeout
+        timeout: CONFIG.timeout,
       }
     );
     
-    console.log("✅ Token obtido com sucesso");
-    console.log(`🎯 Escopo funcionou: "${escopo || 'sem escopo'}"`);
+    console.log(`✅ Token ${AMBIENTE_ATUAL} obtido com sucesso`);
     return response.data.access_token;
     
   } catch (error) {
-    console.error(`❌ Erro na tentativa ${tentativa}:`, {
+    console.error(`❌ Erro token ${AMBIENTE_ATUAL} (tentativa ${tentativa}):`, {
       message: error.message,
       status: error.response?.status,
       data: error.response?.data
     });
     
-    // Se for erro de escopo, tenta próximo escopo
-    if (tentativa < 5 && (
+    if (tentativa < CONFIG.retry_attempts && (
       error.response?.status === 400 ||
       error.response?.data?.detail?.includes('Escopo') ||
       error.response?.data?.detail?.includes('escopo') ||
@@ -172,7 +331,7 @@ async function obterToken(tentativa = 1) {
       error.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
       error.code === 'CERT_UNTRUSTED'
     )) {
-      console.log(`🔄 Tentando novamente com configuração ${tentativa + 1}...`);
+      console.log(`🔄 Tentando novamente token ${AMBIENTE_ATUAL} (${tentativa + 1})...`);
       return obterToken(tentativa + 1);
     }
     
@@ -180,6 +339,9 @@ async function obterToken(tentativa = 1) {
   }
 }
 
+// =====================================================
+// FUNÇÃO PARA FAZER REQUISIÇÕES POR AMBIENTE
+// =====================================================
 async function fazerRequisicaoSicredi(url, options, tentativa = 1) {
   try {
     const httpsAgent = criarAgentHTTPS(tentativa);
@@ -187,20 +349,20 @@ async function fazerRequisicaoSicredi(url, options, tentativa = 1) {
       ...options,
       url,
       httpsAgent,
-      timeout: 15000,
+      timeout: CONFIG.timeout,
     });
     
     return response;
     
   } catch (error) {
-    console.error(`❌ Erro na requisição (tentativa ${tentativa}):`, error.message);
+    console.error(`❌ Erro requisição ${AMBIENTE_ATUAL} (tentativa ${tentativa}):`, error.message);
     
-    if (tentativa < 3 && (
+    if (tentativa < CONFIG.retry_attempts && (
       error.code === 'UNABLE_TO_GET_ISSUER_CERT' || 
       error.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
       error.code === 'CERT_UNTRUSTED'
     )) {
-      console.log(`🔄 Tentando requisição novamente com configuração ${tentativa + 1}...`);
+      console.log(`🔄 Tentando requisição ${AMBIENTE_ATUAL} novamente (${tentativa + 1})...`);
       return fazerRequisicaoSicredi(url, options, tentativa + 1);
     }
     
@@ -208,44 +370,201 @@ async function fazerRequisicaoSicredi(url, options, tentativa = 1) {
   }
 }
 
-// Middleware para log de requisições
-app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.path} - ${new Date().toISOString()}`);
-  next();
-});
-
-// Endpoint de health check
+// =====================================================
+// ENDPOINT DE HEALTH CHECK ATUALIZADO
+// =====================================================
 app.get("/health", (req, res) => {
-  const isProducao = process.env.SICREDI_ENV === 'prod';
-  
   res.json({ 
     status: "ok", 
     timestamp: new Date().toISOString(),
-    ambiente: isProducao ? 'produção' : 'homologação',
-    apis: {
-      token_url: isProducao ? 'https://api-pix.sicredi.com.br/oauth/token' : 'https://api-pix-h.sicredi.com.br/oauth/token',
-      pix_url: isProducao ? 'https://api-pix.sicredi.com.br/api/v2' : 'https://api-pix-h.sicredi.com.br/api/v2'
+    ambiente: {
+      atual: AMBIENTE_ATUAL,
+      producao: isProducao
+    },
+    configuracao: {
+      api_url: CONFIG.api_url,
+      token_url: CONFIG.token_url,
+      client_id_configurado: !!CONFIG.client_id,
+      client_secret_configurado: !!CONFIG.client_secret,
+      pix_key_configurado: !!CONFIG.pix_key,
+      ssl_verify: CONFIG.ssl_verify,
+      timeout: CONFIG.timeout,
+      retry_attempts: CONFIG.retry_attempts
     },
     certificates: {
       cert: !!certificates.cert,
       key: !!certificates.key,
       ca: !!certificates.ca
     },
-    configuracao: {
+    validacao: {
       chave_pix_obrigatoria: isProducao,
-      chave_configurada: PIX_KEY ? 'sim' : 'não'
+      configuracao_valida: !!CONFIG.client_id && !!CONFIG.client_secret && (isProducao ? !!CONFIG.pix_key : true)
     }
   });
 });
 
-// Endpoint para testar apenas a autenticação
+// =====================================================
+// ENDPOINT PARA TROCAR AMBIENTE EM TEMPO DE EXECUÇÃO
+// =====================================================
+app.post("/trocar-ambiente", (req, res) => {
+  try {
+    const { novo_ambiente } = req.body;
+    
+    if (!novo_ambiente || !CONFIG_AMBIENTES[novo_ambiente]) {
+      return res.status(400).json({
+        erro: "Ambiente inválido",
+        ambientes_disponiveis: Object.keys(CONFIG_AMBIENTES),
+        ambiente_atual: AMBIENTE_ATUAL
+      });
+    }
+    
+    if (novo_ambiente === AMBIENTE_ATUAL) {
+      return res.json({
+        message: "Já está no ambiente solicitado",
+        ambiente_atual: AMBIENTE_ATUAL
+      });
+    }
+    
+    // ⚠️ ATENÇÃO: Trocar ambiente em runtime é perigoso em produção
+    if (isProducao) {
+      return res.status(403).json({
+        erro: "Troca de ambiente não permitida em produção",
+        ambiente_atual: AMBIENTE_ATUAL,
+        dica: "Reinicie o servidor com SICREDI_ENV diferente"
+      });
+    }
+    
+    console.log(`🔄 Trocando ambiente: ${AMBIENTE_ATUAL} → ${novo_ambiente}`);
+    
+    // Atualizar variável global (apenas em desenvolvimento)
+    process.env.SICREDI_ENV = novo_ambiente;
+    
+    res.json({
+      sucesso: true,
+      message: `Ambiente trocado para ${novo_ambiente}`,
+      ambiente_anterior: AMBIENTE_ATUAL,
+      ambiente_novo: novo_ambiente,
+      aviso: "⚠️ Reinicie o servidor para aplicar completamente a mudança"
+    });
+    
+  } catch (error) {
+    res.status(500).json({
+      erro: "Falha ao trocar ambiente",
+      detalhes: error.message
+    });
+  }
+});
+
+// =====================================================
+// ENDPOINT PARA TESTAR CONFIGURAÇÃO DE AMBIENTES
+// =====================================================
+app.get("/testar-ambientes", async (req, res) => {
+  const resultados = {};
+  
+  for (const [ambiente, config] of Object.entries(CONFIG_AMBIENTES)) {
+    try {
+      console.log(`🧪 Testando ambiente: ${ambiente}`);
+      
+      // Verificar se tem as configurações necessárias
+      const temConfig = !!(config.client_id && config.client_secret);
+      
+      if (!temConfig) {
+        resultados[ambiente] = {
+          configurado: false,
+          erro: "Client ID ou Client Secret não configurados"
+        };
+        continue;
+      }
+      
+      // Tentar obter token (apenas teste de conectividade)
+      try {
+        const credentials = Buffer.from(`${config.client_id}:${config.client_secret}`).toString("base64");
+        
+        const testResponse = await axios.post(
+          config.token_url,
+          'grant_type=client_credentials',
+          {
+            headers: {
+              Authorization: `Basic ${credentials}`,
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            httpsAgent: new https.Agent({
+              cert: certificates.cert,
+              key: certificates.key,
+              rejectUnauthorized: ambiente === 'prod'
+            }),
+            timeout: 5000
+          }
+        );
+        
+        resultados[ambiente] = {
+          configurado: true,
+          conectividade: "OK",
+          token_obtido: !!testResponse.data.access_token,
+          api_url: config.api_url,
+          pix_key: config.pix_key ? 'configurada' : 'não configurada'
+        };
+        
+      } catch (tokenError) {
+        resultados[ambiente] = {
+          configurado: true,
+          conectividade: "ERRO",
+          erro: tokenError.response?.data?.detail || tokenError.message,
+          status: tokenError.response?.status
+        };
+      }
+      
+    } catch (error) {
+      resultados[ambiente] = {
+        configurado: false,
+        erro: error.message
+      };
+    }
+  }
+  
+  res.json({
+    ambiente_atual: AMBIENTE_ATUAL,
+    testes: resultados,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// =====================================================
+// LOGS DE INICIALIZAÇÃO
+// =====================================================
+console.log(`
+🚀 Middleware PIX Sicredi Multi-Ambiente
+📍 Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}
+🌐 API URL: ${CONFIG.api_url}
+🔐 Client ID: ${CONFIG.client_id ? CONFIG.client_id.substring(0, 8) + '...' : 'NÃO CONFIGURADO'}
+🔑 PIX Key: ${CONFIG.pix_key ? 'CONFIGURADA' : 'NÃO CONFIGURADA'}
+⚙️  SSL Verify: ${CONFIG.ssl_verify}
+⏱️  Timeout: ${CONFIG.timeout}ms
+🔄 Retry Attempts: ${CONFIG.retry_attempts}
+`);
+
+// Exportar configurações para usar nos outros endpoints
+module.exports = {
+  CONFIG,
+  AMBIENTE_ATUAL,
+  isProducao,
+  obterToken,
+  fazerRequisicaoSicredi,
+  certificates
+};
+
+// Endpoint para testar apenas a autenticação no ambiente ativo
 app.get("/test-auth", async (req, res) => {
   try {
-    console.log("🧪 Testando autenticação...");
+    console.log(`🧪 Testando autenticação no ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
     
-    if (!CLIENT_ID || !CLIENT_SECRET) {
+    if (!CONFIG.client_id || !CONFIG.client_secret) {
       return res.status(400).json({
-        erro: "CLIENT_ID e CLIENT_SECRET devem estar configurados no .env"
+        erro: `CLIENT_ID e CLIENT_SECRET devem estar configurados para ${AMBIENTE_ATUAL}`,
+        variaveis_necessarias: [
+          `SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_CLIENT_ID`,
+          `SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_CLIENT_SECRET`
+        ]
       });
     }
     
@@ -253,43 +572,68 @@ app.get("/test-auth", async (req, res) => {
     
     res.json({
       sucesso: true,
-      message: "Autenticação realizada com sucesso!",
-      token_length: token.length,
-      token_preview: token.substring(0, 20) + "..."
+      message: `Autenticação realizada com sucesso no ambiente ${AMBIENTE_ATUAL.toUpperCase()}!`,
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url,
+        token_url: CONFIG.token_url
+      },
+      token_info: {
+        length: token.length,
+        preview: token.substring(0, 20) + "...",
+        expires_info: "Verificar documentação Sicredi para TTL"
+      },
+      configuracao: {
+        client_id: CONFIG.client_id.substring(0, 8) + '...',
+        pix_key_configurada: !!CONFIG.pix_key,
+        ssl_verify: CONFIG.ssl_verify,
+        timeout: CONFIG.timeout
+      }
     });
     
   } catch (error) {
-    console.error("❌ Erro na autenticação:", error.response?.data || error.message);
+    console.error(`❌ Erro na autenticação ${AMBIENTE_ATUAL}:`, error.response?.data || error.message);
     
     res.status(500).json({
-      erro: "Falha na autenticação",
+      erro: `Falha na autenticação do ambiente ${AMBIENTE_ATUAL.toUpperCase()}`,
+      ambiente: AMBIENTE_ATUAL,
       detalhes: {
         message: error.message,
         status: error.response?.status,
-        data: error.response?.data
-      }
+        data: error.response?.data,
+        api_url: CONFIG.api_url
+      },
+      dicas: [
+        "Verifique se as credenciais estão corretas no .env",
+        "Confirme se o ambiente está acessível",
+        "Verifique os certificados SSL na pasta /certs"
+      ]
     });
   }
 });
 
-// Substitua a função /gerar-pix por esta versão corrigida:
-
+// Endpoint para gerar PIX (atualizado para usar configurações por ambiente)
 app.post("/gerar-pix", async (req, res) => {
   try {
     const { nome, cpf, valor, chave_pix, descricao } = req.body;
     
+    console.log(`💰 Gerando PIX no ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
     // Validações básicas
     if (!nome || !cpf || !valor) {
       return res.status(400).json({ 
-        erro: "Campos obrigatórios: nome, cpf, valor" 
+        erro: "Campos obrigatórios: nome, cpf, valor",
+        ambiente: AMBIENTE_ATUAL
       });
     }
     
-    // Validação do CPF (apenas números, 11 dígitos)
+    // Validação do CPF
     const cpfLimpo = cpf.replace(/\D/g, '');
     if (cpfLimpo.length !== 11) {
       return res.status(400).json({ 
-        erro: "CPF deve conter exatamente 11 dígitos numéricos" 
+        erro: "CPF deve conter exatamente 11 dígitos numéricos",
+        ambiente: AMBIENTE_ATUAL
       });
     }
     
@@ -297,49 +641,44 @@ app.post("/gerar-pix", async (req, res) => {
     const valorNumerico = parseFloat(valor);
     if (isNaN(valorNumerico) || valorNumerico <= 0) {
       return res.status(400).json({ 
-        erro: "Valor deve ser um número positivo" 
+        erro: "Valor deve ser um número positivo",
+        ambiente: AMBIENTE_ATUAL
       });
     }
     
     // Determinar chave PIX baseada no ambiente
-    let chavePixFinal;
-    const isProducao = process.env.SICREDI_ENV === 'prod';
+    let chavePixFinal = chave_pix || CONFIG.pix_key;
     
-    if (isProducao) {
-      // Em produção: chave é obrigatória
-      chavePixFinal = chave_pix || PIX_KEY;
-      if (!chavePixFinal) {
-        return res.status(400).json({
-          erro: "Chave PIX é obrigatória em produção. Configure PIX_KEY no .env ou envie chave_pix na requisição.",
-          ambiente: "produção"
-        });
-      }
-    } else {
-      // Em homologação: chave é opcional mas recomendada
-      chavePixFinal = chave_pix || PIX_KEY;
-      console.log(`🧪 Ambiente: HOMOLOGAÇÃO - Chave PIX: ${chavePixFinal ? 'fornecida' : 'não obrigatória'}`);
+    if (isProducao && !chavePixFinal) {
+      return res.status(400).json({
+        erro: "Chave PIX é obrigatória em produção",
+        solucoes: [
+          "Configure SICREDI_PROD_PIX_KEY no .env",
+          "Ou envie chave_pix na requisição"
+        ],
+        ambiente: "produção"
+      });
     }
     
-    console.log(`💰 Gerando PIX para ${nome} - R$ ${valorNumerico.toFixed(2)} - Ambiente: ${isProducao ? 'PRODUÇÃO' : 'HOMOLOGAÇÃO'}`);
+    console.log(`💰 Gerando PIX para ${nome} - R$ ${valorNumerico.toFixed(2)} - Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
     
     const token = await obterToken();
 
-    // Payload corrigido seguindo a especificação PIX do Banco Central
+    // Payload seguindo a especificação PIX
     const payload = {
       calendario: { 
-        expiracao: 3600 // em segundos
+        expiracao: 3600 // 1 hora
       },
       devedor: { 
-        cpf: cpfLimpo, // CPF apenas com números
-        nome: nome.trim() // Remove espaços extras
+        cpf: cpfLimpo,
+        nome: nome.trim()
       },
       valor: { 
-        original: valorNumerico.toFixed(2) // Garantir 2 casas decimais
+        original: valorNumerico.toFixed(2)
       },
-      solicitacaoPagador: (descricao || "Pagamento via PIX").substring(0, 140) // Limite de caracteres
+      solicitacaoPagador: (descricao || "Pagamento via PIX").substring(0, 140)
     };
     
-    // Adicionar chave apenas se fornecida
     if (chavePixFinal) {
       payload.chave = chavePixFinal.trim();
       console.log(`🔑 Usando chave PIX: ${chavePixFinal}`);
@@ -348,10 +687,10 @@ app.post("/gerar-pix", async (req, res) => {
     }
 
     console.log("📤 Payload a ser enviado:", JSON.stringify(payload, null, 2));
-    console.log("📤 Enviando cobrança para Sicredi...");
+    console.log(`📤 Enviando cobrança para Sicredi ${AMBIENTE_ATUAL.toUpperCase()}...`);
     
     const response = await fazerRequisicaoSicredi(
-      `${SICREDI_API}/cob`,
+      `${CONFIG.api_url}/cob`,
       {
         method: 'POST',
         data: payload,
@@ -366,12 +705,12 @@ app.post("/gerar-pix", async (req, res) => {
     const { txid } = response.data;
     console.log(`✅ Cobrança criada - TXID: ${txid}`);
     
-    // Aguarda um momento antes de consultar a cobrança
+    // Aguarda antes de consultar a cobrança
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     console.log("📋 Buscando dados da cobrança...");
     const cobranca = await fazerRequisicaoSicredi(
-      `${SICREDI_API}/cob/${txid}`,
+      `${CONFIG.api_url}/cob/${txid}`,
       {
         method: 'GET',
         headers: { 
@@ -382,22 +721,32 @@ app.post("/gerar-pix", async (req, res) => {
       }
     );
 
-    console.log("✅ PIX gerado com sucesso!");
+    console.log(`✅ PIX gerado com sucesso no ambiente ${AMBIENTE_ATUAL.toUpperCase()}!`);
+    
+    // Gerar URL do QR Code
+    const pixCode = cobranca.data.pixCopiaECola;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
     
     res.json({
       sucesso: true,
       txid,
-      pixCopiaECola: cobranca.data.pixCopiaECola,
+      pixCopiaECola: pixCode,
+      qrCodeUrl: qrCodeUrl,
       valor: payload.valor.original,
       devedor: payload.devedor,
       expiracao: payload.calendario.expiracao,
-      ambiente: isProducao ? 'produção' : 'homologação',
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url
+      },
       chave_utilizada: chavePixFinal || 'nenhuma (homologação)',
-      qrcode: cobranca.data.qrcode || null // Caso tenha QR Code
+      qrcode: cobranca.data.qrcode || null,
+      data_criacao: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error("❌ Erro detalhado:", {
+    console.error(`❌ Erro detalhado no ambiente ${AMBIENTE_ATUAL}:`, {
       message: error.message,
       code: error.code,
       response: error.response?.data,
@@ -413,7 +762,6 @@ app.post("/gerar-pix", async (req, res) => {
     const statusCode = error.response?.status || 500;
     let errorMessage = "Falha ao gerar cobrança PIX";
     
-    // Mensagens de erro mais específicas
     if (error.response?.data?.detail) {
       errorMessage = error.response.data.detail;
     } else if (error.response?.data?.message) {
@@ -424,7 +772,11 @@ app.post("/gerar-pix", async (req, res) => {
     
     const responseError = {
       erro: errorMessage,
-      ambiente: process.env.SICREDI_ENV === 'prod' ? 'produção' : 'homologação',
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url
+      },
       timestamp: new Date().toISOString()
     };
     
@@ -434,7 +786,13 @@ app.post("/gerar-pix", async (req, res) => {
         code: error.code,
         status: error.response?.status,
         data: error.response?.data,
-        violacoes: error.response?.data?.violacoes
+        violacoes: error.response?.data?.violacoes,
+        config_ambiente: {
+          client_id_ok: !!CONFIG.client_id,
+          client_secret_ok: !!CONFIG.client_secret,
+          pix_key_ok: !!CONFIG.pix_key,
+          ssl_verify: CONFIG.ssl_verify
+        }
       };
     }
     
@@ -442,15 +800,17 @@ app.post("/gerar-pix", async (req, res) => {
   }
 });
 
-// Também adicione este endpoint para debug do payload:
+// Endpoint para debug do payload no ambiente atual
 app.post("/debug-payload", (req, res) => {
   try {
     const { nome, cpf, valor, chave_pix, descricao } = req.body;
     
+    console.log(`🐛 Debug payload no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
     // Validações e processamento igual ao endpoint principal
     const cpfLimpo = cpf?.replace(/\D/g, '') || '';
     const valorNumerico = parseFloat(valor) || 0;
-    const chavePixFinal = chave_pix || PIX_KEY;
+    const chavePixFinal = chave_pix || CONFIG.pix_key;
     
     const payload = {
       calendario: { 
@@ -475,34 +835,49 @@ app.post("/debug-payload", (req, res) => {
       cpf_valido: cpfLimpo.length === 11,
       valor_valido: valorNumerico > 0,
       nome_valido: nome && nome.trim().length > 0,
-      chave_presente: !!chavePixFinal
+      chave_presente: !!chavePixFinal,
+      chave_obrigatoria_prod: isProducao ? !!chavePixFinal : true
     };
     
     res.json({
       payload_que_seria_enviado: payload,
       validacoes,
-      ambiente: process.env.SICREDI_ENV === 'prod' ? 'produção' : 'homologação',
-      todas_validacoes_ok: Object.values(validacoes).every(v => v === true)
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url,
+        chave_configurada: !!CONFIG.pix_key,
+        variavel_chave: `SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_PIX_KEY`
+      },
+      todas_validacoes_ok: Object.values(validacoes).every(v => v === true),
+      configuracao_ambiente: {
+        client_id_ok: !!CONFIG.client_id,
+        client_secret_ok: !!CONFIG.client_secret,
+        pix_key_ok: !!CONFIG.pix_key,
+        ssl_verify: CONFIG.ssl_verify,
+        timeout: CONFIG.timeout
+      }
     });
     
   } catch (error) {
     res.status(400).json({
       erro: "Erro ao processar payload",
+      ambiente: AMBIENTE_ATUAL,
       detalhes: error.message
     });
   }
 });
 
-// Endpoint para consultar status de uma cobrança
+// Endpoint para consultar status de uma cobrança (atualizado)
 app.get("/consultar-pix/:txid", async (req, res) => {
   try {
     const { txid } = req.params;
     const token = await obterToken();
     
-    console.log(`🔍 Consultando PIX: ${txid}`);
+    console.log(`🔍 Consultando PIX: ${txid} no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
     
     const cobranca = await fazerRequisicaoSicredi(
-      `${SICREDI_API}/cob/${txid}`,
+      `${CONFIG.api_url}/cob/${txid}`,
       {
         method: 'GET',
         headers: { 
@@ -512,29 +887,246 @@ app.get("/consultar-pix/:txid", async (req, res) => {
       }
     );
     
+    const dadosCobranca = cobranca.data;
+    const foiPago = dadosCobranca.pix && dadosCobranca.pix.length > 0;
+    
     res.json({
       sucesso: true,
-      dados: cobranca.data
+      txid: txid,
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao
+      },
+      status: foiPago ? 'CONCLUIDA' : dadosCobranca.status,
+      pago: foiPago,
+      dados: {
+        valor_original: dadosCobranca.valor?.original,
+        devedor: dadosCobranca.devedor,
+        data_criacao: dadosCobranca.calendario?.criacao,
+        data_expiracao: dadosCobranca.calendario?.expiracao,
+        pixCopiaECola: dadosCobranca.pixCopiaECola,
+        info_pagamento: foiPago ? dadosCobranca.pix[0] : null
+      }
     });
     
   } catch (error) {
-    console.error("❌ Erro ao consultar PIX:", error.message);
+    console.error(`❌ Erro ao consultar PIX no ambiente ${AMBIENTE_ATUAL}:`, error.message);
     
     const statusCode = error.response?.status || 500;
     const errorMessage = error.response?.data?.message || "Falha ao consultar PIX";
     
     res.status(statusCode).json({ 
-      erro: errorMessage 
+      erro: errorMessage,
+      txid: req.params.txid,
+      ambiente: AMBIENTE_ATUAL
     });
   }
 });
 
-// Endpoint para testar chaves PIX disponíveis
+// Endpoint webhook para novo pagamento (atualizado para multi-ambiente)
+app.post("/webhook/novo-pagamento", async (req, res) => {
+  try {
+    const { pagamento, origem = "appsheet" } = req.body;
+    
+    console.log(`🔔 Webhook recebido no ambiente ${AMBIENTE_ATUAL.toUpperCase()} - Novo pagamento de ${origem}:`, pagamento);
+    
+    if (!pagamento) {
+      return res.status(400).json({
+        erro: "Objeto 'pagamento' é obrigatório no body",
+        ambiente: AMBIENTE_ATUAL,
+        formato_esperado: {
+          pagamento: {
+            "Row ID": "string",
+            "Pagador": "string", 
+            "Inscricao": "string",
+            "Valor Pix": "number",
+            "descricao_pagador": "string (opcional)",
+            "chave_pix": "string (opcional)",
+            "Status": "string (opcional)"
+          }
+        }
+      });
+    }
+
+    // Verificar se já existe uma cobrança para este pagamento
+    if (pagamento.txid && pagamento.txid !== '') {
+      console.log(`⚠️  Pagamento ${pagamento["Row ID"]} já possui TXID: ${pagamento.txid}`);
+      return res.json({
+        sucesso: false,
+        message: "Pagamento já possui cobrança PIX gerada",
+        txid_existente: pagamento.txid,
+        ambiente: AMBIENTE_ATUAL,
+        acao: "nenhuma"
+      });
+    }
+
+    // Validar dados do pagamento
+    const validacao = validarPagamento(pagamento);
+    if (!validacao.valido) {
+      console.error(`❌ Validação falhou para ${pagamento["Row ID"]}:`, validacao.erro);
+      return res.status(400).json({
+        erro: validacao.erro,
+        pagamento_id: pagamento["Row ID"],
+        pagador: pagamento.Pagador,
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+
+    // Determinar chave PIX baseada no ambiente
+    const chavePixFinal = pagamento.chave_pix || CONFIG.pix_key;
+    
+    if (isProducao && !chavePixFinal) {
+      return res.status(400).json({
+        erro: "Chave PIX obrigatória em produção",
+        solucao: "Configure SICREDI_PROD_PIX_KEY no .env ou adicione chave_pix no pagamento",
+        ambiente: "produção"
+      });
+    }
+
+    console.log(`💰 Gerando PIX automático para ${validacao.nomeLimpo} - R$ ${validacao.valorFormatado} - Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
+    // Obter token
+    const token = await obterToken();
+
+    // Preparar payload
+    const payload = {
+      calendario: { 
+        expiracao: 3600
+      },
+      devedor: { 
+        cpf: validacao.cpfLimpo,
+        nome: validacao.nomeLimpo
+      },
+      valor: { 
+        original: validacao.valorFormatado
+      },
+      solicitacaoPagador: validacao.descricaoLimpa
+    };
+
+    if (chavePixFinal) {
+      payload.chave = chavePixFinal.trim();
+    }
+
+    // Criar cobrança no Sicredi
+    const response = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cob`,
+      {
+        method: 'POST',
+        data: payload,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const { txid } = response.data;
+    console.log(`✅ Cobrança criada automaticamente - TXID: ${txid}`);
+    
+    // Aguardar antes de consultar a cobrança
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // Buscar dados completos da cobrança
+    const cobranca = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cob/${txid}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+      }
+    );
+
+    const pixCode = cobranca.data.pixCopiaECola;
+    
+    // Gerar URL do QR Code
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
+
+    // Resposta completa para o AppSheet atualizar a linha
+    const resultado = {
+      sucesso: true,
+      message: `Cobrança PIX gerada automaticamente no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`,
+      
+      // Dados para atualizar no AppSheet
+      atualizacao_appsheet: {
+        "Row ID": pagamento["Row ID"],
+        txid: txid,
+        pixCopiaECola: pixCode,
+        qr_code_url: qrCodeUrl,
+        status_pix: "ATIVA",
+        data_geracao_pix: new Date().toISOString(),
+        ambiente_pix: AMBIENTE_ATUAL,
+        link_pagamento: `https://pix.example.com/pay/${txid}` // Customize conforme necessário
+      },
+
+      // Dados detalhados
+      cobranca: {
+        txid: txid,
+        valor: validacao.valorFormatado,
+        devedor: {
+          nome: validacao.nomeLimpo,
+          cpf: validacao.cpfLimpo
+        },
+        pixCopiaECola: pixCode,
+        qrCodeUrl: qrCodeUrl,
+        expiracao_em: new Date(Date.now() + 3600000).toISOString(),
+        chave_utilizada: chavePixFinal || 'nenhuma (homologação)'
+      },
+
+      webhook_info: {
+        origem: origem,
+        processado_em: new Date().toISOString(),
+        ambiente: {
+          nome: AMBIENTE_ATUAL,
+          producao: isProducao,
+          api_url: CONFIG.api_url
+        }
+      }
+    };
+
+    console.log(`🎯 Webhook processado com sucesso para ${validacao.nomeLimpo} no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
+    res.json(resultado);
+
+  } catch (error) {
+    console.error(`❌ Erro no webhook de novo pagamento no ambiente ${AMBIENTE_ATUAL}:`, {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+
+    const statusCode = error.response?.status || 500;
+    res.status(statusCode).json({
+      erro: `Falha ao processar novo pagamento no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`,
+      message: error.response?.data?.detail || error.message,
+      webhook_info: {
+        origem: req.body.origem || "appsheet",
+        erro_em: new Date().toISOString(),
+        ambiente: {
+          nome: AMBIENTE_ATUAL,
+          producao: isProducao,
+          api_url: CONFIG.api_url
+        }
+      },
+      
+      // Dados para o AppSheet marcar como erro
+      atualizacao_appsheet: {
+        "Row ID": req.body.pagamento?.["Row ID"],
+        status_pix: "ERRO",
+        erro_pix: error.response?.data?.detail || error.message,
+        data_erro_pix: new Date().toISOString(),
+        ambiente_pix: AMBIENTE_ATUAL
+      }
+    });
+  }
+});
+
+// Endpoint para listar chaves PIX do ambiente atual
 app.get("/listar-chaves", async (req, res) => {
   try {
     const token = await obterToken();
     
-    console.log("🔑 Listando chaves PIX disponíveis...");
+    console.log(`🔑 Listando chaves PIX disponíveis no ambiente ${AMBIENTE_ATUAL.toUpperCase()}...`);
     
     // Tenta buscar cobranças recentes para identificar chaves válidas
     const agora = new Date();
@@ -542,7 +1134,7 @@ app.get("/listar-chaves", async (req, res) => {
     const agoraISO = agora.toISOString();
     
     const cobrancas = await fazerRequisicaoSicredi(
-      `${SICREDI_API}/cob?inicio=${ontemISO}&fim=${agoraISO}`,
+      `${CONFIG.api_url}/cob?inicio=${ontemISO}&fim=${agoraISO}`,
       {
         method: 'GET',
         headers: { 
@@ -559,26 +1151,34 @@ app.get("/listar-chaves", async (req, res) => {
     
     res.json({
       sucesso: true,
-      message: "Chaves encontradas nas cobranças recentes",
+      message: `Chaves encontradas nas cobranças recentes do ambiente ${AMBIENTE_ATUAL.toUpperCase()}`,
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url
+      },
       chaves_encontradas: chavesEncontradas,
-      chave_configurada: PIX_KEY || "NÃO CONFIGURRADA",
+      chave_configurada: CONFIG.pix_key || "NÃO CONFIGURADA",
+      variavel_env: `SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_PIX_KEY`,
       dica: "Se não há chaves, você precisa cadastrar uma chave PIX no Sicredi primeiro"
     });
     
   } catch (error) {
-    console.error("❌ Erro ao listar chaves:", error.message);
+    console.error(`❌ Erro ao listar chaves no ambiente ${AMBIENTE_ATUAL}:`, error.message);
     
     res.json({
       sucesso: false,
       erro: "Não foi possível listar chaves",
-      chave_configurada: PIX_KEY || "NÃO CONFIGURADA",
+      ambiente: AMBIENTE_ATUAL,
+      chave_configurada: CONFIG.pix_key || "NÃO CONFIGURADA",
+      variavel_env: `SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_PIX_KEY`,
       dica: "Verifique se sua chave PIX está cadastrada no Sicredi",
       detalhes: error.response?.data
     });
   }
 });
 
-// Adicione estes endpoints ao seu middleware PIX Sicredi
+
 
 // Endpoint para processar múltiplas cobranças da tabela pagamentos
 app.post("/gerar-cobrancas-lote", async (req, res) => {
