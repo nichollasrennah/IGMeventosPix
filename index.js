@@ -800,6 +800,269 @@ app.post("/gerar-pix", async (req, res) => {
   }
 });
 
+// Endpoint para gerar PIX com vencimento (CobV)
+app.post("/gerar-pix-vencimento", async (req, res) => {
+  try {
+    const { 
+      nome, 
+      cpf, 
+      valor, 
+      chave_pix, 
+      descricao,
+      data_vencimento,
+      multa = {},
+      juros = {},
+      desconto = {},
+      txid_customizado
+    } = req.body;
+    
+    console.log(`💰 Gerando PIX com vencimento no ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
+    // Validações básicas
+    if (!nome || !cpf || !valor || !data_vencimento) {
+      return res.status(400).json({ 
+        erro: "Campos obrigatórios: nome, cpf, valor, data_vencimento",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+    
+    // Validação do CPF
+    const cpfLimpo = cpf.replace(/\D/g, '');
+    if (cpfLimpo.length !== 11) {
+      return res.status(400).json({ 
+        erro: "CPF deve conter exatamente 11 dígitos numéricos",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+    
+    // Validação do valor
+    const valorNumerico = parseFloat(valor);
+    if (isNaN(valorNumerico) || valorNumerico <= 0) {
+      return res.status(400).json({ 
+        erro: "Valor deve ser um número positivo",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+    
+    // Validação da data de vencimento
+    const dataVencimento = new Date(data_vencimento);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    
+    if (isNaN(dataVencimento.getTime())) {
+      return res.status(400).json({
+        erro: "Data de vencimento inválida. Use formato: YYYY-MM-DD",
+        exemplo: "2024-12-31",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+    
+    if (dataVencimento <= hoje) {
+      return res.status(400).json({
+        erro: "Data de vencimento deve ser posterior à data atual",
+        data_informada: data_vencimento,
+        data_minima: new Date(hoje.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+    
+    // Determinar chave PIX baseada no ambiente
+    let chavePixFinal = chave_pix || CONFIG.pix_key;
+    
+    if (isProducao && !chavePixFinal) {
+      return res.status(400).json({
+        erro: "Chave PIX é obrigatória em produção",
+        solucoes: [
+          "Configure SICREDI_PROD_PIX_KEY no .env",
+          "Ou envie chave_pix na requisição"
+        ],
+        ambiente: "produção"
+      });
+    }
+    
+    console.log(`💰 Gerando PIX com vencimento para ${nome} - R$ ${valorNumerico.toFixed(2)} - Vence: ${data_vencimento} - Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
+    const token = await obterToken();
+
+    // Gerar TXID se não fornecido (formato específico para CobV)
+    const txid = txid_customizado || `cobv${Date.now()}${Math.random().toString(36).substr(2, 4)}`;
+
+    // Payload para cobrança com vencimento seguindo padrão PIX
+    const payload = {
+      calendario: { 
+        dataDeVencimento: dataVencimento.toISOString().split('T')[0], // YYYY-MM-DD
+        validadeAposVencimento: 30 // dias para pagamento após vencimento
+      },
+      devedor: { 
+        cpf: cpfLimpo,
+        nome: nome.trim()
+      },
+      valor: { 
+        original: valorNumerico.toFixed(2)
+      },
+      solicitacaoPagador: (descricao || "Pagamento PIX com vencimento").substring(0, 140)
+    };
+    
+    // Adicionar chave PIX se fornecida
+    if (chavePixFinal) {
+      payload.chave = chavePixFinal.trim();
+      console.log(`🔑 Usando chave PIX: ${chavePixFinal}`);
+    }
+    
+    // Adicionar multa se informada
+    if (multa && (multa.modalidade || multa.valorPerc)) {
+      payload.valor.multa = {
+        modalidade: multa.modalidade || "2", // 1=Valor fixo, 2=Percentual
+        valorPerc: multa.valorPerc ? parseFloat(multa.valorPerc).toFixed(2) : "2.00"
+      };
+      console.log(`⚖️ Multa configurada: ${multa.modalidade === "1" ? "R$ " + multa.valorPerc : multa.valorPerc + "%"}`);
+    }
+    
+    // Adicionar juros se informados
+    if (juros && (juros.modalidade || juros.valorPerc)) {
+      payload.valor.juros = {
+        modalidade: juros.modalidade || "2", // 1=Valor fixo, 2=Percentual
+        valorPerc: juros.valorPerc ? parseFloat(juros.valorPerc).toFixed(2) : "1.00"
+      };
+      console.log(`💹 Juros configurados: ${juros.modalidade === "1" ? "R$ " + juros.valorPerc : juros.valorPerc + "%"}`);
+    }
+    
+    // Adicionar desconto se informado
+    if (desconto && desconto.descontos && Array.isArray(desconto.descontos)) {
+      payload.valor.desconto = desconto;
+      console.log(`💸 Desconto configurado: ${desconto.descontos.length} regra(s)`);
+    }
+
+    console.log("📤 Payload CobV a ser enviado:", JSON.stringify(payload, null, 2));
+    console.log(`📤 Enviando cobrança com vencimento para Sicredi ${AMBIENTE_ATUAL.toUpperCase()}...`);
+    
+    // Criar cobrança com vencimento usando PUT
+    const response = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cobv/${txid}`,
+      {
+        method: 'PUT',
+        data: payload,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+      }
+    );
+
+    console.log(`✅ Cobrança com vencimento criada - TXID: ${txid}`);
+    
+    // Aguarda antes de consultar a cobrança
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    console.log("📋 Buscando dados da cobrança com vencimento...");
+    const cobranca = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cobv/${txid}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+      }
+    );
+
+    console.log(`✅ PIX com vencimento gerado com sucesso no ambiente ${AMBIENTE_ATUAL.toUpperCase()}!`);
+    
+    // Gerar URL do QR Code
+    const pixCode = cobranca.data.pixCopiaECola;
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
+    
+    res.json({
+      sucesso: true,
+      tipo: "cobranca_com_vencimento",
+      txid,
+      pixCopiaECola: pixCode,
+      qrCodeUrl: qrCodeUrl,
+      valor: {
+        original: payload.valor.original,
+        multa: payload.valor.multa || null,
+        juros: payload.valor.juros || null,
+        desconto: payload.valor.desconto || null
+      },
+      devedor: payload.devedor,
+      vencimento: {
+        data: payload.calendario.dataDeVencimento,
+        validade_apos_vencimento: payload.calendario.validadeAposVencimento
+      },
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url
+      },
+      chave_utilizada: chavePixFinal || 'nenhuma (homologação)',
+      qrcode: cobranca.data.qrcode || null,
+      data_criacao: new Date().toISOString(),
+      observacoes: {
+        pagamento_ate_vencimento: `Valor original: R$ ${payload.valor.original}`,
+        pagamento_apos_vencimento: payload.valor.multa || payload.valor.juros ? 
+          "Valor com acréscimos será calculado automaticamente" : 
+          "Mesmo valor após vencimento"
+      }
+    });
+    
+  } catch (error) {
+    console.error(`❌ Erro detalhado na cobrança com vencimento no ambiente ${AMBIENTE_ATUAL}:`, {
+      message: error.message,
+      code: error.code,
+      response: error.response?.data,
+      status: error.response?.status,
+      url: error.config?.url
+    });
+    
+    // Log das violações específicas se disponível
+    if (error.response?.data?.violacoes) {
+      console.error("📋 Violações do schema CobV:", error.response.data.violacoes);
+    }
+    
+    const statusCode = error.response?.status || 500;
+    let errorMessage = "Falha ao gerar cobrança PIX com vencimento";
+    
+    if (error.response?.data?.detail) {
+      errorMessage = error.response.data.detail;
+    } else if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    const responseError = {
+      erro: errorMessage,
+      tipo: "cobranca_com_vencimento",
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url
+      },
+      timestamp: new Date().toISOString()
+    };
+    
+    // Em desenvolvimento, adiciona mais detalhes
+    if (process.env.NODE_ENV === 'development') {
+      responseError.detalhes = {
+        code: error.code,
+        status: error.response?.status,
+        data: error.response?.data,
+        violacoes: error.response?.data?.violacoes,
+        config_ambiente: {
+          client_id_ok: !!CONFIG.client_id,
+          client_secret_ok: !!CONFIG.client_secret,
+          pix_key_ok: !!CONFIG.pix_key,
+          ssl_verify: CONFIG.ssl_verify
+        }
+      };
+    }
+    
+    res.status(statusCode).json(responseError);
+  }
+});
+
 // Endpoint para debug do payload no ambiente atual
 app.post("/debug-payload", (req, res) => {
   try {
@@ -868,6 +1131,151 @@ app.post("/debug-payload", (req, res) => {
   }
 });
 
+// Endpoint para debug do payload de cobrança com vencimento
+app.post("/debug-payload-vencimento", (req, res) => {
+  try {
+    const { 
+      nome, 
+      cpf, 
+      valor, 
+      chave_pix, 
+      descricao,
+      data_vencimento,
+      multa = {},
+      juros = {},
+      desconto = {},
+      txid_customizado
+    } = req.body;
+    
+    console.log(`🐛 Debug payload vencimento no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
+    // Validações e processamento
+    const cpfLimpo = cpf?.replace(/\D/g, '') || '';
+    const valorNumerico = parseFloat(valor) || 0;
+    const chavePixFinal = chave_pix || CONFIG.pix_key;
+    const dataVencimento = data_vencimento ? new Date(data_vencimento) : null;
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    
+    // Gerar TXID de exemplo
+    const txid = txid_customizado || `cobv${Date.now()}${Math.random().toString(36).substr(2, 4)}`;
+    
+    const payload = {
+      calendario: { 
+        dataDeVencimento: dataVencimento ? dataVencimento.toISOString().split('T')[0] : null,
+        validadeAposVencimento: 30
+      },
+      devedor: { 
+        cpf: cpfLimpo,
+        nome: nome?.trim() || ''
+      },
+      valor: { 
+        original: valorNumerico.toFixed(2)
+      },
+      solicitacaoPagador: (descricao || "Pagamento PIX com vencimento").substring(0, 140)
+    };
+    
+    if (chavePixFinal) {
+      payload.chave = chavePixFinal.trim();
+    }
+    
+    // Adicionar multa se informada
+    if (multa && (multa.modalidade || multa.valorPerc)) {
+      payload.valor.multa = {
+        modalidade: multa.modalidade || "2",
+        valorPerc: multa.valorPerc ? parseFloat(multa.valorPerc).toFixed(2) : "2.00"
+      };
+    }
+    
+    // Adicionar juros se informados
+    if (juros && (juros.modalidade || juros.valorPerc)) {
+      payload.valor.juros = {
+        modalidade: juros.modalidade || "2",
+        valorPerc: juros.valorPerc ? parseFloat(juros.valorPerc).toFixed(2) : "1.00"
+      };
+    }
+    
+    // Adicionar desconto se informado
+    if (desconto && desconto.descontos && Array.isArray(desconto.descontos)) {
+      payload.valor.desconto = desconto;
+    }
+    
+    // Validações específicas para CobV
+    const validacoes = {
+      cpf_valido: cpfLimpo.length === 11,
+      valor_valido: valorNumerico > 0,
+      nome_valido: nome && nome.trim().length > 0,
+      data_vencimento_valida: dataVencimento && !isNaN(dataVencimento.getTime()),
+      data_vencimento_futura: dataVencimento && dataVencimento > hoje,
+      chave_presente: !!chavePixFinal,
+      chave_obrigatoria_prod: isProducao ? !!chavePixFinal : true,
+      multa_configurada_corretamente: !multa?.modalidade || (multa.modalidade && multa.valorPerc),
+      juros_configurados_corretamente: !juros?.modalidade || (juros.modalidade && juros.valorPerc),
+      desconto_configurado_corretamente: !desconto?.descontos || Array.isArray(desconto.descontos)
+    };
+    
+    // Cálculos de exemplo para valores após vencimento
+    let exemploValorVencido = valorNumerico;
+    const diasExemplo = 30; // Exemplo: 30 dias após vencimento
+    
+    if (payload.valor.multa) {
+      const multaExemplo = payload.valor.multa.modalidade === "1" ? 
+        parseFloat(payload.valor.multa.valorPerc) :
+        valorNumerico * (parseFloat(payload.valor.multa.valorPerc) / 100);
+      exemploValorVencido += multaExemplo;
+    }
+    
+    if (payload.valor.juros) {
+      const jurosExemplo = payload.valor.juros.modalidade === "1" ?
+        parseFloat(payload.valor.juros.valorPerc) * diasExemplo :
+        valorNumerico * (parseFloat(payload.valor.juros.valorPerc) / 100) * diasExemplo;
+      exemploValorVencido += jurosExemplo;
+    }
+    
+    res.json({
+      payload_que_seria_enviado: payload,
+      validacoes,
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url,
+        chave_configurada: !!CONFIG.pix_key,
+        variavel_chave: `SICREDI_${AMBIENTE_ATUAL.toUpperCase()}_PIX_KEY`
+      },
+      todas_validacoes_ok: Object.values(validacoes).every(v => v === true),
+      configuracao_ambiente: {
+        client_id_ok: !!CONFIG.client_id,
+        client_secret_ok: !!CONFIG.client_secret,
+        pix_key_ok: !!CONFIG.pix_key,
+        ssl_verify: CONFIG.ssl_verify,
+        timeout: CONFIG.timeout
+      },
+      simulacoes: {
+        endpoint_criacao: `PUT ${CONFIG.api_url}/cobv/${txid}`,
+        endpoint_consulta: `GET ${CONFIG.api_url}/cobv/${txid}`,
+        txid_gerado: txid,
+        valor_no_vencimento: `R$ ${valorNumerico.toFixed(2)}`,
+        valor_apos_vencimento_exemplo: `R$ ${exemploValorVencido.toFixed(2)} (após ${diasExemplo} dias)`,
+        data_vencimento_formatada: dataVencimento?.toISOString().split('T')[0] || 'NÃO INFORMADA'
+      },
+      dicas: [
+        "Use formato YYYY-MM-DD para data_vencimento",
+        "Multa modalidade: 1=Valor fixo, 2=Percentual",
+        "Juros modalidade: 1=Valor fixo por dia, 2=Percentual por dia",
+        "Descontos devem ter array 'descontos' com objetos {data, modalidade, valorPerc}",
+        "TXID será gerado automaticamente se não fornecido"
+      ]
+    });
+    
+  } catch (error) {
+    res.status(400).json({
+      erro: "Erro ao processar payload de vencimento",
+      ambiente: AMBIENTE_ATUAL,
+      detalhes: error.message
+    });
+  }
+});
+
 // Endpoint para consultar status de uma cobrança (atualizado)
 app.get("/consultar-pix/:txid", async (req, res) => {
   try {
@@ -917,6 +1325,164 @@ app.get("/consultar-pix/:txid", async (req, res) => {
     
     res.status(statusCode).json({ 
       erro: errorMessage,
+      txid: req.params.txid,
+      ambiente: AMBIENTE_ATUAL
+    });
+  }
+});
+
+// Endpoint para consultar status de uma cobrança com vencimento (CobV)
+app.get("/consultar-pix-vencimento/:txid", async (req, res) => {
+  try {
+    const { txid } = req.params;
+    const token = await obterToken();
+    
+    console.log(`🔍 Consultando PIX com vencimento: ${txid} no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
+    const cobranca = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cobv/${txid}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+      }
+    );
+    
+    const dadosCobranca = cobranca.data;
+    const foiPago = dadosCobranca.pix && dadosCobranca.pix.length > 0;
+    const hoje = new Date();
+    const dataVencimento = new Date(dadosCobranca.calendario?.dataDeVencimento);
+    const vencido = hoje > dataVencimento;
+    
+    // Calcular valor a ser pago (considerando multa/juros se vencido)
+    let valorAPagar = parseFloat(dadosCobranca.valor?.original || 0);
+    let detalhesValor = {
+      valor_original: dadosCobranca.valor?.original,
+      multa: null,
+      juros: null,
+      desconto: null,
+      valor_final: dadosCobranca.valor?.original
+    };
+    
+    if (vencido && !foiPago) {
+      const diasVencidos = Math.floor((hoje - dataVencimento) / (1000 * 60 * 60 * 24));
+      
+      // Calcular multa se configurada
+      if (dadosCobranca.valor?.multa) {
+        const multa = dadosCobranca.valor.multa;
+        let valorMulta = 0;
+        
+        if (multa.modalidade === "1") { // Valor fixo
+          valorMulta = parseFloat(multa.valorPerc);
+        } else { // Percentual
+          valorMulta = valorAPagar * (parseFloat(multa.valorPerc) / 100);
+        }
+        
+        detalhesValor.multa = {
+          modalidade: multa.modalidade,
+          percentual_ou_valor: multa.valorPerc,
+          valor_calculado: valorMulta.toFixed(2)
+        };
+        valorAPagar += valorMulta;
+      }
+      
+      // Calcular juros se configurados
+      if (dadosCobranca.valor?.juros) {
+        const juros = dadosCobranca.valor.juros;
+        let valorJuros = 0;
+        
+        if (juros.modalidade === "1") { // Valor fixo por dia
+          valorJuros = parseFloat(juros.valorPerc) * diasVencidos;
+        } else { // Percentual por dia
+          valorJuros = valorAPagar * (parseFloat(juros.valorPerc) / 100) * diasVencidos;
+        }
+        
+        detalhesValor.juros = {
+          modalidade: juros.modalidade,
+          percentual_ou_valor: juros.valorPerc,
+          dias_vencidos: diasVencidos,
+          valor_calculado: valorJuros.toFixed(2)
+        };
+        valorAPagar += valorJuros;
+      }
+      
+      detalhesValor.valor_final = valorAPagar.toFixed(2);
+    }
+    
+    // Verificar descontos aplicáveis (se não vencido)
+    if (!vencido && dadosCobranca.valor?.desconto?.descontos) {
+      for (const desc of dadosCobranca.valor.desconto.descontos) {
+        const dataLimite = new Date(desc.data);
+        if (hoje <= dataLimite) {
+          detalhesValor.desconto = {
+            disponivel: true,
+            data_limite: desc.data,
+            modalidade: desc.modalidade,
+            valor_percentual: desc.valorPerc,
+            valor_desconto: desc.modalidade === "1" ? 
+              desc.valorPerc : 
+              (valorAPagar * (parseFloat(desc.valorPerc) / 100)).toFixed(2)
+          };
+          break;
+        }
+      }
+    }
+    
+    res.json({
+      sucesso: true,
+      tipo: "cobranca_com_vencimento",
+      txid: txid,
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao
+      },
+      status: foiPago ? 'CONCLUIDA' : dadosCobranca.status,
+      pago: foiPago,
+      vencido: vencido,
+      dados: {
+        valor: detalhesValor,
+        devedor: dadosCobranca.devedor,
+        vencimento: {
+          data: dadosCobranca.calendario?.dataDeVencimento,
+          dias_para_vencer: vencido ? 0 : Math.ceil((dataVencimento - hoje) / (1000 * 60 * 60 * 24)),
+          dias_vencidos: vencido ? Math.floor((hoje - dataVencimento) / (1000 * 60 * 60 * 24)) : 0,
+          validade_apos_vencimento: dadosCobranca.calendario?.validadeAposVencimento
+        },
+        data_criacao: dadosCobranca.calendario?.criacao,
+        pixCopiaECola: dadosCobranca.pixCopiaECola,
+        info_pagamento: foiPago ? dadosCobranca.pix[0] : null
+      },
+      observacoes: {
+        pode_pagar: !foiPago && (
+          !vencido || 
+          (vencido && dadosCobranca.calendario?.validadeAposVencimento > 0)
+        ),
+        valor_atual: foiPago ? 
+          "Já pago" : 
+          (vencido ? 
+            `R$ ${detalhesValor.valor_final} (com acréscimos)` : 
+            `R$ ${detalhesValor.valor_original}`
+          ),
+        mensagem: foiPago ? 
+          "Cobrança já foi paga" :
+          (vencido ? 
+            "Cobrança vencida - valor com acréscimos" :
+            "Cobrança dentro do prazo"
+          )
+      }
+    });
+    
+  } catch (error) {
+    console.error(`❌ Erro ao consultar PIX com vencimento no ambiente ${AMBIENTE_ATUAL}:`, error.message);
+    
+    const statusCode = error.response?.status || 500;
+    const errorMessage = error.response?.data?.message || "Falha ao consultar PIX com vencimento";
+    
+    res.status(statusCode).json({ 
+      erro: errorMessage,
+      tipo: "cobranca_com_vencimento",
       txid: req.params.txid,
       ambiente: AMBIENTE_ATUAL
     });
@@ -1673,6 +2239,17 @@ app.listen(PORT, () => {
 🌐 URL: http://localhost:${PORT}
 🏥 Health: http://localhost:${PORT}/health
 📂 Certificados: ${CERT_PATH}
+
+📋 Endpoints disponíveis:
+   • POST /gerar-pix - Cobrança PIX imediata
+   • POST /gerar-pix-vencimento - Cobrança PIX com vencimento
+   • GET  /consultar-pix/:txid - Consultar cobrança imediata
+   • GET  /consultar-pix-vencimento/:txid - Consultar cobrança com vencimento
+   • POST /debug-payload - Debug cobrança imediata
+   • POST /debug-payload-vencimento - Debug cobrança com vencimento
+   • POST /webhook/novo-pagamento - Webhook AppSheet
+   • GET  /test-auth - Testar autenticação
+   • GET  /listar-chaves - Listar chaves PIX
   `);
   
   // Verifica se os certificados estão presentes
