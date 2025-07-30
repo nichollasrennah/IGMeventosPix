@@ -264,10 +264,12 @@ async function obterToken(tentativa = 1) {
     
     // Escopos baseados no ambiente
     const escopos = isProducao ? [
+      "cob.write+cob.read+pix.read+cobv.write+cobv.read+lotecobv.write+lotecobv.read",
       "cob.write+cob.read+webhook.read+webhook.write", // Produção: escopo completo
       "cob.read+cob.write+pix.read",
       "cob.write+cob.read"
     ] : [
+      "cob.write+cob.read+pix.read+cobv.write+cobv.read+lotecobv.write+lotecobv.read",
       "cob.write+cob.read+webhook.read+webhook.write", // Homolog: pode tentar mais variações
       "cob.read+cob.write+pix.read",
       "cob.write+cob.read+pix.read",
