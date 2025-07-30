@@ -1825,7 +1825,7 @@ app.post("/gerar-cobrancas-lote", async (req, res) => {
         }
         
         // Determinar chave PIX
-        const chavePixFinal = pagamento.chave_pix || PIX_KEY;
+        const chavePixFinal = pagamento.chave_pix || CONFIG.pix_key;
         const isProducao = process.env.SICREDI_ENV === 'prod';
         
         if (isProducao && !chavePixFinal) {
@@ -1862,7 +1862,7 @@ app.post("/gerar-cobrancas-lote", async (req, res) => {
         console.log(`💰 Gerando PIX para ${validacao.nomeLimpo} - R$ ${validacao.valorFormatado}`);
         
         const response = await fazerRequisicaoSicredi(
-          `${SICREDI_API}/cob`,
+          `${CONFIG.api_url}/cob`,
           {
             method: 'POST',
             data: payload,
@@ -1880,7 +1880,7 @@ app.post("/gerar-cobrancas-lote", async (req, res) => {
         
         // Buscar dados completos da cobrança
         const cobranca = await fazerRequisicaoSicredi(
-          `${SICREDI_API}/cob/${txid}`,
+          `${CONFIG.api_url}/cob/${txid}`,
           {
             method: 'GET',
             headers: { 
@@ -2067,7 +2067,7 @@ app.post("/consultar-cobrancas-lote", async (req, res) => {
     for (const txid of txids) {
       try {
         const cobranca = await fazerRequisicaoSicredi(
-          `${SICREDI_API}/cob/${txid}`,
+          `${CONFIG.api_url}/cob/${txid}`,
           {
             method: 'GET',
             headers: { 
@@ -2190,7 +2190,7 @@ app.get("/relatorio-cobrancas", async (req, res) => {
     
     // Buscar cobranças do período
     const cobrancas = await fazerRequisicaoSicredi(
-      `${SICREDI_API}/cob?inicio=${inicioISO}&fim=${fimISO}`,
+      `${CONFIG.api_url}/cob?inicio=${inicioISO}&fim=${fimISO}`,
       {
         method: 'GET',
         headers: { 
