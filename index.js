@@ -342,6 +342,25 @@ async function obterToken(tentativa = 1) {
 }
 
 // =====================================================
+// FUNÇÃO PARA GERAR TXID NO FORMATO PIX PADRÃO
+// =====================================================
+function generateTxid() {
+  // TXID deve ter entre 26 e 35 caracteres alfanuméricos (sem símbolos especiais)
+  // Formato mais compatível: usar apenas números e letras minúsculas
+  const timestamp = Math.floor(Date.now() / 1000).toString(); // 10 chars
+  const randomPart = Math.random().toString(36).replace(/[^a-z0-9]/g, '').substring(0, 16); // 16 chars limpos
+  const txid = (timestamp + randomPart).toLowerCase().replace(/[^a-z0-9]/g, '');
+  
+  // Garantir que tem pelo menos 26 caracteres
+  if (txid.length < 26) {
+    const padding = Math.random().toString(36).replace(/[^a-z0-9]/g, '').substring(0, 26 - txid.length);
+    return (txid + padding).substring(0, 35);
+  }
+  
+  return txid.substring(0, 35); // máximo 35 chars
+}
+
+// =====================================================
 // FUNÇÃO PARA FAZER REQUISIÇÕES POR AMBIENTE
 // =====================================================
 async function fazerRequisicaoSicredi(url, options, tentativa = 1) {
@@ -886,8 +905,9 @@ app.post("/gerar-pix-vencimento", async (req, res) => {
     
     const token = await obterToken();
 
-    // Gerar TXID se não fornecido (formato específico para CobV)
-    const txid = txid_customizado || `cobv${Date.now()}${Math.random().toString(36).substr(2, 4)}`;
+    // Gerar TXID se não fornecido (padrão PIX: 26-35 caracteres alfanuméricos)
+    const txid = txid_customizado || generateTxid();
+    console.log(`🆔 TXID gerado para CobV: ${txid} (${txid.length} caracteres)`);
 
     // Payload para cobrança com vencimento seguindo padrão PIX
     const payload = {
@@ -1160,7 +1180,7 @@ app.post("/debug-payload-vencimento", (req, res) => {
     hoje.setHours(0, 0, 0, 0);
     
     // Gerar TXID de exemplo
-    const txid = txid_customizado || `cobv${Date.now()}${Math.random().toString(36).substr(2, 4)}`;
+    const txid = txid_customizado || generateTxid();
     
     const payload = {
       calendario: { 
