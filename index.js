@@ -8,12 +8,23 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const bodyParser = require("body-parser");
+const htmlPdf = require("html-pdf-node");
 require("dotenv").config();
 
 const app = express();
 app.use(bodyParser.json());
 
 const CERT_PATH = path.join(__dirname, "certs");
+const PDF_PATH = path.join(__dirname, "pdfs");
+
+// Servir arquivos PDF estaticamente
+app.use('/pdfs', express.static(PDF_PATH));
+
+// Criar diretório de PDFs se não existir
+if (!fs.existsSync(PDF_PATH)) {
+  fs.mkdirSync(PDF_PATH, { recursive: true });
+  console.log("📁 Diretório de PDFs criado:", PDF_PATH);
+}
 
 // =====================================================
 // CONFIGURAÇÃO DE AMBIENTES
@@ -359,6 +370,359 @@ function generateTxid() {
   
   return txid.substring(0, 35); // máximo 35 chars
 }
+
+// =====================================================
+// FUNÇÃO PARA GERAR TEMPLATE HTML DO RELATÓRIO PDF
+// =====================================================
+function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
+  const dataAtual = new Date().toLocaleDateString('pt-BR', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  
+  const dataInicio = new Date(periodo.inicio).toLocaleDateString('pt-BR');
+  const dataFim = new Date(periodo.fim).toLocaleDateString('pt-BR');
+  
+  const template = `
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Relatório de Cobranças PIX - Sicredi</title>
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        
+        body {
+          font-family: 'Arial', sans-serif;
+          line-height: 1.6;
+          color: #333;
+          background: #fff;
+        }
+        
+        .container {
+          max-width: 800px;
+          margin: 0 auto;
+          padding: 20px;
+        }
+        
+        .header {
+          text-align: center;
+          margin-bottom: 30px;
+          border-bottom: 3px solid #00a651;
+          padding-bottom: 20px;
+        }
+        
+        .header h1 {
+          color: #00a651;
+          font-size: 28px;
+          margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+          color: #666;
+          font-size: 16px;
+        }
+        
+        .info-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          margin-bottom: 30px;
+        }
+        
+        .info-card {
+          background: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 8px;
+          padding: 15px;
+        }
+        
+        .info-card h3 {
+          color: #00a651;
+          font-size: 14px;
+          margin-bottom: 10px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        .info-card .value {
+          font-size: 18px;
+          font-weight: bold;
+          color: #333;
+        }
+        
+        .stats {
+          background: linear-gradient(135deg, #00a651, #4CAF50);
+          color: white;
+          border-radius: 10px;
+          padding: 20px;
+          margin-bottom: 30px;
+        }
+        
+        .stats h2 {
+          margin-bottom: 15px;
+          text-align: center;
+        }
+        
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 15px;
+          text-align: center;
+        }
+        
+        .stat-item {
+          background: rgba(255,255,255,0.1);
+          border-radius: 5px;
+          padding: 10px;
+        }
+        
+        .stat-item .number {
+          font-size: 24px;
+          font-weight: bold;
+          display: block;
+        }
+        
+        .stat-item .label {
+          font-size: 12px;
+          opacity: 0.9;
+        }
+        
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+          background: white;
+          border-radius: 8px;
+          overflow: hidden;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        th, td {
+          padding: 12px;
+          text-align: left;
+          border-bottom: 1px solid #e9ecef;
+        }
+        
+        th {
+          background: #00a651;
+          color: white;
+          font-weight: bold;
+          font-size: 14px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        
+        tr:nth-child(even) {
+          background: #f8f9fa;
+        }
+        
+        tr:hover {
+          background: #e3f2fd;
+        }
+        
+        .status {
+          padding: 4px 8px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: bold;
+          text-transform: uppercase;
+        }
+        
+        .status.ativa {
+          background: #d4edda;
+          color: #155724;
+        }
+        
+        .status.concluida {
+          background: #cce5ff;
+          color: #004085;
+        }
+        
+        .status.erro {
+          background: #f8d7da;
+          color: #721c24;
+        }
+        
+        .pago-sim {
+          color: #00a651;
+          font-weight: bold;
+        }
+        
+        .pago-nao {
+          color: #dc3545;
+          font-weight: bold;
+        }
+        
+        .footer {
+          margin-top: 30px;
+          text-align: center;
+          color: #666;
+          font-size: 12px;
+          border-top: 1px solid #e9ecef;
+          padding-top: 20px;
+        }
+        
+        .valor {
+          font-family: 'Courier New', monospace;
+          font-weight: bold;
+        }
+        
+        @media print {
+          .container {
+            max-width: none;
+            margin: 0;
+            padding: 15px;
+          }
+          
+          .info-grid {
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+          
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Relatório de Cobranças PIX</h1>
+          <div class="subtitle">Sistema Sicredi - Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}</div>
+        </div>
+        
+        <div class="info-grid">
+          <div class="info-card">
+            <h3>Período do Relatório</h3>
+            <div class="value">${dataInicio} a ${dataFim}</div>
+          </div>
+          <div class="info-card">
+            <h3>Gerado em</h3>
+            <div class="value">${dataAtual}</div>
+          </div>
+        </div>
+        
+        <div class="stats">
+          <h2>Resumo Estatístico</h2>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <span class="number">${estatisticas.total_cobrancas}</span>
+              <span class="label">Total de Cobranças</span>
+            </div>
+            <div class="stat-item">
+              <span class="number">R$ ${estatisticas.valor_total.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+              <span class="label">Valor Total</span>
+            </div>
+            <div class="stat-item">
+              <span class="number">${estatisticas.cobrancas_pagas}</span>
+              <span class="label">Cobranças Pagas</span>
+            </div>
+            <div class="stat-item">
+              <span class="number">${estatisticas.cobrancas_ativas}</span>
+              <span class="label">Cobranças Ativas</span>
+            </div>
+            <div class="stat-item">
+              <span class="number">R$ ${estatisticas.valor_recebido.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+              <span class="label">Valor Recebido</span>
+            </div>
+            <div class="stat-item">
+              <span class="number">${estatisticas.taxa_conversao}</span>
+              <span class="label">Taxa de Conversão</span>
+            </div>
+          </div>
+        </div>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>TXID</th>
+              <th>Devedor</th>
+              <th>Valor</th>
+              <th>Status</th>
+              <th>Pago</th>
+              <th>Data Criação</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${dados.map(cob => `
+              <tr>
+                <td><small>${cob.txid}</small></td>
+                <td>${cob.devedor}</td>
+                <td class="valor">R$ ${parseFloat(cob.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                <td><span class="status ${cob.status?.toLowerCase() || 'ativa'}">${cob.status || 'ATIVA'}</span></td>
+                <td class="${cob.pago ? 'pago-sim' : 'pago-nao'}">${cob.pago ? 'SIM' : 'NÃO'}</td>
+                <td><small>${cob.data_criacao ? new Date(cob.data_criacao).toLocaleDateString('pt-BR') : 'N/A'}</small></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <div class="footer">
+          <p>Relatório gerado automaticamente pelo Middleware PIX Sicredi</p>
+          <p>Ambiente: ${AMBIENTE_ATUAL.toUpperCase()} | API: ${CONFIG.api_url}</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+  
+  return template;
+}
+
+// =====================================================
+// FUNÇÃO PARA LIMPEZA AUTOMÁTICA DE PDFs ANTIGOS
+// =====================================================
+function limparPDFsAntigos() {
+  try {
+    const agora = Date.now();
+    const TEMPO_LIMITE = 24 * 60 * 60 * 1000; // 24 horas
+    
+    if (!fs.existsSync(PDF_PATH)) {
+      return;
+    }
+    
+    const arquivos = fs.readdirSync(PDF_PATH);
+    let removidos = 0;
+    
+    arquivos.forEach(arquivo => {
+      if (arquivo.endsWith('.pdf')) {
+        const caminhoArquivo = path.join(PDF_PATH, arquivo);
+        const stats = fs.statSync(caminhoArquivo);
+        const idade = agora - stats.mtime.getTime();
+        
+        if (idade > TEMPO_LIMITE) {
+          try {
+            fs.unlinkSync(caminhoArquivo);
+            removidos++;
+            console.log(`🗑️ PDF antigo removido: ${arquivo}`);
+          } catch (error) {
+            console.error(`❌ Erro ao remover PDF ${arquivo}:`, error.message);
+          }
+        }
+      }
+    });
+    
+    if (removidos > 0) {
+      console.log(`🧹 Limpeza automática: ${removidos} PDFs antigos removidos`);
+    }
+    
+  } catch (error) {
+    console.error("❌ Erro na limpeza automática de PDFs:", error.message);
+  }
+}
+
+// Executar limpeza automática a cada 2 horas
+setInterval(limparPDFsAntigos, 2 * 60 * 60 * 1000);
 
 // =====================================================
 // FUNÇÃO PARA FAZER REQUISIÇÕES POR AMBIENTE
@@ -2353,6 +2717,214 @@ app.get("/appsheet-cobrancas", async (req, res) => {
   }
 });
 
+// Endpoint para gerar relatório em PDF
+app.get("/relatorio-pdf", async (req, res) => {
+  try {
+    const { 
+      data_inicio, 
+      data_fim, 
+      nome_arquivo
+    } = req.query;
+    
+    const token = await obterToken();
+    
+    // Definir período (padrão: últimos 7 dias)
+    const fim = data_fim ? new Date(data_fim) : new Date();
+    const inicio = data_inicio ? new Date(data_inicio) : new Date(fim.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    const inicioISO = inicio.toISOString();
+    const fimISO = fim.toISOString();
+    
+    console.log(`📄 Gerando relatório PDF: ${inicioISO} até ${fimISO}`);
+    
+    // Buscar cobranças do período
+    const cobrancas = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cob?inicio=${inicioISO}&fim=${fimISO}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+      }
+    );
+    
+    const dados = cobrancas.data.cobs || [];
+    
+    // Processar estatísticas
+    const stats = {
+      total_cobrancas: dados.length,
+      valor_total: dados.reduce((acc, cob) => acc + parseFloat(cob.valor?.original || 0), 0),
+      cobrancas_pagas: dados.filter(cob => cob.pix?.length > 0).length,
+      cobrancas_ativas: dados.filter(cob => cob.status === 'ATIVA').length,
+      cobrancas_expiradas: dados.filter(cob => cob.status === 'REMOVIDA_PELO_USUARIO_RECEBEDOR').length,
+      valor_recebido: dados
+        .filter(cob => cob.pix?.length > 0)
+        .reduce((acc, cob) => acc + parseFloat(cob.valor?.original || 0), 0),
+      taxa_conversao: dados.length > 0 ? 
+        ((dados.filter(cob => cob.pix?.length > 0).length / dados.length) * 100).toFixed(1) + '%' : '0%'
+    };
+    
+    // Formatar dados para o template
+    const dadosFormatados = dados.map(cob => ({
+      txid: cob.txid,
+      valor: cob.valor?.original,
+      devedor: cob.devedor?.nome,
+      status: cob.status,
+      data_criacao: cob.calendario?.criacao,
+      pago: cob.pix?.length > 0,
+      data_pagamento: cob.pix?.[0]?.horario
+    }));
+    
+    // Gerar HTML
+    const html = gerarTemplateRelatorioPDF(dadosFormatados, stats, {
+      inicio: inicioISO,
+      fim: fimISO
+    });
+    
+    // Gerar nome do arquivo
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+    const nomeArquivo = nome_arquivo || 
+      `relatorio-cobrancas-${AMBIENTE_ATUAL}-${timestamp}-${Date.now()}.pdf`;
+    
+    const caminhoArquivo = path.join(PDF_PATH, nomeArquivo);
+    
+    console.log(`📄 Gerando PDF: ${nomeArquivo}`);
+    
+    // Configurações do PDF
+    const options = {
+      format: 'A4',
+      border: {
+        top: "20px",
+        right: "20px",
+        bottom: "20px",
+        left: "20px"
+      },
+      paginationOffset: 1,
+      height: "297mm",
+      width: "210mm",
+      timeout: 30000
+    };
+    
+    const file = { content: html };
+    
+    // Gerar PDF
+    const pdfBuffer = await htmlPdf.generatePdf(file, options);
+    
+    // Salvar PDF no servidor
+    fs.writeFileSync(caminhoArquivo, pdfBuffer);
+    
+    console.log(`✅ PDF gerado com sucesso: ${nomeArquivo}`);
+    
+    // URL para acessar o PDF
+    const urlPdf = `${req.protocol}://${req.get('host')}/pdfs/${nomeArquivo}`;
+    
+    res.json({
+      sucesso: true,
+      message: "Relatório PDF gerado com sucesso",
+      arquivo: {
+        nome: nomeArquivo,
+        url: urlPdf,
+        caminho: caminhoArquivo,
+        tamanho: fs.statSync(caminhoArquivo).size
+      },
+      periodo: {
+        inicio: inicioISO,
+        fim: fimISO,
+        inicio_formatado: inicio.toLocaleDateString('pt-BR'),
+        fim_formatado: fim.toLocaleDateString('pt-BR')
+      },
+      estatisticas: stats,
+      total_cobrancas: dados.length,
+      ambiente: {
+        nome: AMBIENTE_ATUAL,
+        producao: isProducao,
+        api_url: CONFIG.api_url
+      },
+      gerado_em: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro ao gerar relatório PDF:", error);
+    res.status(500).json({
+      erro: "Falha ao gerar relatório PDF",
+      detalhes: error.message,
+      ambiente: AMBIENTE_ATUAL,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint para listar PDFs disponíveis
+app.get("/listar-pdfs", (req, res) => {
+  try {
+    const arquivos = fs.readdirSync(PDF_PATH)
+      .filter(arquivo => arquivo.endsWith('.pdf'))
+      .map(arquivo => {
+        const caminhoCompleto = path.join(PDF_PATH, arquivo);
+        const stats = fs.statSync(caminhoCompleto);
+        
+        return {
+          nome: arquivo,
+          url: `${req.protocol}://${req.get('host')}/pdfs/${arquivo}`,
+          tamanho: stats.size,
+          tamanho_formatado: (stats.size / 1024 / 1024).toFixed(2) + ' MB',
+          data_criacao: stats.birthtime.toISOString(),
+          data_modificacao: stats.mtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.data_criacao) - new Date(a.data_criacao));
+    
+    console.log(`📋 Listando ${arquivos.length} PDFs disponíveis`);
+    
+    res.json({
+      sucesso: true,
+      total: arquivos.length,
+      arquivos: arquivos,
+      diretorio: PDF_PATH,
+      ambiente: AMBIENTE_ATUAL
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro ao listar PDFs:", error);
+    res.status(500).json({
+      erro: "Falha ao listar PDFs",
+      detalhes: error.message
+    });
+  }
+});
+
+// Endpoint para deletar PDF específico
+app.delete("/pdfs/:nome", (req, res) => {
+  try {
+    const nomeArquivo = req.params.nome;
+    const caminhoArquivo = path.join(PDF_PATH, nomeArquivo);
+    
+    if (!fs.existsSync(caminhoArquivo)) {
+      return res.status(404).json({
+        erro: "PDF não encontrado",
+        arquivo: nomeArquivo
+      });
+    }
+    
+    fs.unlinkSync(caminhoArquivo);
+    console.log(`🗑️ PDF deletado: ${nomeArquivo}`);
+    
+    res.json({
+      sucesso: true,
+      message: "PDF deletado com sucesso",
+      arquivo: nomeArquivo
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro ao deletar PDF:", error);
+    res.status(500).json({
+      erro: "Falha ao deletar PDF",
+      detalhes: error.message
+    });
+  }
+});
+
 // Endpoint de relatório/dashboard
 app.get("/relatorio-cobrancas", async (req, res) => {
   try {
@@ -2456,6 +3028,10 @@ app.listen(PORT, () => {
    • POST /debug-payload-vencimento - Debug cobrança com vencimento
    • POST /webhook/novo-pagamento - Webhook AppSheet
    • GET  /relatorio-appsheet - Relatório para AppSheet (array simples)
+   • GET  /relatorio-pdf - Gerar relatório PDF (retorna URL)
+   • GET  /listar-pdfs - Listar PDFs disponíveis
+   • DELETE /pdfs/:nome - Deletar PDF específico
+   • GET  /pdfs/:nome - Acessar PDF gerado
    • GET  /appsheet-cobrancas - Relatório AppSheet (propriedades diretas)
    • GET  /relatorio-cobrancas - Relatório completo (objeto estruturado)
    • GET  /test-auth - Testar autenticação
