@@ -3608,7 +3608,6 @@ app.get("/whatsapp-qr", (req, res) => {
           background-color: #1db954;
         }
       </style>
-      <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
     </head>
     <body>
       <div class="container">
@@ -3616,7 +3615,7 @@ app.get("/whatsapp-qr", (req, res) => {
         <p>Escaneie o QR Code abaixo com seu WhatsApp</p>
         
         <div class="qr-code">
-          <canvas id="qrcode"></canvas>
+          <div id="qrcode">Carregando QR Code...</div>
         </div>
         
         <div class="instructions">
@@ -3629,6 +3628,13 @@ app.get("/whatsapp-qr", (req, res) => {
           </ol>
         </div>
         
+        <div style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+          <strong>💡 Alternativa:</strong><br>
+          <small>Se o QR Code não aparecer, copie o texto abaixo e cole em um gerador online:</small><br>
+          <textarea readonly style="width: 100%; height: 60px; margin-top: 10px; font-family: monospace; font-size: 12px;">${currentQRCode}</textarea>
+          <br><small>Use: <a href="https://www.qr-code-generator.com/" target="_blank">qr-code-generator.com</a></small>
+        </div>
+        
         <button class="refresh-btn" onclick="location.reload()">🔄 Atualizar QR Code</button>
         <button class="refresh-btn" onclick="window.open('/whatsapp-status', '_blank')">📊 Ver Status</button>
         
@@ -3636,32 +3642,93 @@ app.get("/whatsapp-qr", (req, res) => {
       </div>
 
       <script>
-        // Gerar QR Code
+        // Usar API QR Server como fallback
         const qrData = ${JSON.stringify(currentQRCode)};
-        const canvas = document.getElementById('qrcode');
+        const qrDiv = document.getElementById('qrcode');
         
-        QRCode.toCanvas(canvas, qrData, {
-          width: 300,
-          margin: 2,
-          color: {
-            dark: '#000000',
-            light: '#FFFFFF'
+        // Tentar múltiplas APIs de QR Code
+        const qrServices = [
+          'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=',
+          'https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl='
+        ];
+        
+        function tryQRService(index) {
+          if (index >= qrServices.length) {
+            qrDiv.innerHTML = '<p style="color: #ff6b6b;">❌ Erro ao carregar QR Code.<br>Use a alternativa abaixo ↓</p>';
+            return;
           }
-        }, function (error) {
-          if (error) {
-            console.error('Erro ao gerar QR Code:', error);
-            canvas.parentElement.innerHTML = '<p style="color: red;">Erro ao gerar QR Code</p>';
-          }
-        });
+          
+          const img = new Image();
+          img.onload = function() {
+            qrDiv.innerHTML = '';
+            img.style.maxWidth = '300px';
+            img.style.height = 'auto';
+            img.style.border = '2px solid #ddd';
+            img.style.borderRadius = '8px';
+            qrDiv.appendChild(img);
+          };
+          
+          img.onerror = function() {
+            console.log('QR Service ' + index + ' failed, trying next...');
+            tryQRService(index + 1);
+          };
+          
+          img.src = qrServices[index] + encodeURIComponent(qrData);
+        }
+        
+        // Iniciar tentativa de carregamento
+        tryQRService(0);
 
-        // Auto-refresh a cada 30 segundos
+        // Auto-refresh a cada 45 segundos
         setTimeout(() => {
           location.reload();
-        }, 30000);
+        }, 45000);
       </script>
     </body>
     </html>
   `);
+});
+
+// Endpoint para obter QR Code como imagem (redirect para API externa)
+app.get("/whatsapp-qr-image", (req, res) => {
+  if (!currentQRCode) {
+    return res.status(404).json({
+      erro: "QR Code não disponível",
+      dica: "Acesse /whatsapp-status para verificar o status"
+    });
+  }
+
+  // Redirect para API externa de QR Code
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(currentQRCode)}`;
+  res.redirect(qrImageUrl);
+});
+
+// Endpoint para obter dados do QR Code como JSON
+app.get("/whatsapp-qr-data", (req, res) => {
+  if (!currentQRCode) {
+    return res.status(404).json({
+      erro: "QR Code não disponível",
+      status: {
+        whatsapp_habilitado: process.env.WHATSAPP_ENABLED === 'true',
+        whatsapp_conectado: whatsappReady,
+        cliente_ativo: !!whatsappClient
+      },
+      dica: "Acesse /whatsapp-status para mais informações"
+    });
+  }
+
+  res.json({
+    qr_code_data: currentQRCode,
+    timestamp: new Date().toISOString(),
+    ambiente: AMBIENTE_ATUAL,
+    status: "disponivel",
+    urls: {
+      qr_visual: "/whatsapp-qr",
+      qr_imagem: "/whatsapp-qr-image",
+      status: "/whatsapp-status"
+    },
+    dica: "Use o qr_code_data em qualquer gerador de QR Code online"
+  });
 });
 
 // Endpoint integrado: Gerar PIX e enviar WhatsApp
@@ -3863,7 +3930,9 @@ app.listen(PORT, () => {
    • GET  /listar-chaves - Listar chaves PIX
    • POST /enviar-whatsapp - Enviar informações de pagamento via WhatsApp
    • GET  /whatsapp-status - Verificar status da conexão WhatsApp
-   • GET  /whatsapp-qr - Visualizar QR Code do WhatsApp no navegador
+   • GET  /whatsapp-qr - Página web para escanear QR Code do WhatsApp
+   • GET  /whatsapp-qr-image - QR Code como imagem PNG
+   • GET  /whatsapp-qr-data - Dados do QR Code em JSON
    • POST /gerar-pix-whatsapp - Gerar PIX e enviar WhatsApp automaticamente
   `);
   
