@@ -292,11 +292,14 @@ async function obterToken(tentativa = 1) {
     
     let url, body, headers;
     
+    // Configurar expiração de 48 horas (172800 segundos)
+    const expiracaoSegundos = 48 * 60 * 60; // 48 horas em segundos
+    
     if (tentativa <= 3) {
       url = CONFIG.token_url;
       body = escopo ? 
-        `grant_type=client_credentials&scope=${escopo}` : 
-        `grant_type=client_credentials`;
+        `grant_type=client_credentials&scope=${escopo}&expires_in=${expiracaoSegundos}` : 
+        `grant_type=client_credentials&expires_in=${expiracaoSegundos}`;
       headers = {
         Authorization: `Basic ${credentials}`,
         "Content-Type": "application/x-www-form-urlencoded",
@@ -304,6 +307,7 @@ async function obterToken(tentativa = 1) {
     } else {
       const params = new URLSearchParams({
         grant_type: 'client_credentials',
+        expires_in: expiracaoSegundos,
         ...(escopo && { scope: escopo })
       });
       url = `${CONFIG.token_url}?${params.toString()}`;
@@ -315,6 +319,7 @@ async function obterToken(tentativa = 1) {
     }
     
     console.log(`📋 ${AMBIENTE_ATUAL.toUpperCase()} - Escopo: "${escopo || 'sem escopo'}" - Método: ${tentativa <= 3 ? 'BODY' : 'QUERY'}`);
+    console.log(`⏰ Token configurado para expirar em 48 horas (${expiracaoSegundos} segundos)`);
     
     const response = await axios.post(
       url,
@@ -326,8 +331,15 @@ async function obterToken(tentativa = 1) {
       }
     );
     
+    // Verificar informações de expiração retornadas
+    const tokenData = response.data;
+    const expiresIn = tokenData.expires_in || 'não informado';
+    const tokenType = tokenData.token_type || 'Bearer';
+    
     console.log(`✅ Token ${AMBIENTE_ATUAL} obtido com sucesso`);
-    return response.data.access_token;
+    console.log(`📊 Detalhes do token: Tipo=${tokenType}, Expira em=${expiresIn}s (${Math.round(expiresIn/3600)}h)`);
+    
+    return tokenData.access_token;
     
   } catch (error) {
     console.error(`❌ Erro token ${AMBIENTE_ATUAL} (tentativa ${tentativa}):`, {
@@ -774,7 +786,9 @@ app.get("/health", (req, res) => {
       pix_key_configurado: !!CONFIG.pix_key,
       ssl_verify: CONFIG.ssl_verify,
       timeout: CONFIG.timeout,
-      retry_attempts: CONFIG.retry_attempts
+      retry_attempts: CONFIG.retry_attempts,
+      token_expiracao_horas: 48,
+      token_expiracao_segundos: 172800
     },
     certificates: {
       cert: !!certificates.cert,
@@ -967,7 +981,8 @@ app.get("/test-auth", async (req, res) => {
       token_info: {
         length: token.length,
         preview: token.substring(0, 20) + "...",
-        expires_info: "Verificar documentação Sicredi para TTL"
+        expiracao_configurada: "48 horas (172800 segundos)",
+        expires_info: "Token configurado para 48h de duração"
       },
       configuracao: {
         client_id: CONFIG.client_id.substring(0, 8) + '...',
