@@ -93,10 +93,25 @@ const CONFIG = CONFIG_AMBIENTES[AMBIENTE_ATUAL];
 let whatsappClient = null;
 let whatsappReady = false;
 let currentQRCode = null;
+let whatsappInitializing = false;
 
 // Inicializar cliente WhatsApp
 function inicializarWhatsApp() {
   if (process.env.WHATSAPP_ENABLED === 'true') {
+    // Prevenir inicializações múltiplas
+    if (whatsappInitializing) {
+      console.log('⚠️ WhatsApp já está sendo inicializado, ignorando...');
+      return;
+    }
+    
+    if (whatsappReady) {
+      console.log('✅ WhatsApp já está conectado');
+      return;
+    }
+    
+    whatsappInitializing = true;
+    console.log('🔄 Iniciando processo de inicialização do WhatsApp...');
+    
     try {
       // Configurações específicas para produção
       const puppeteerOptions = {
@@ -136,9 +151,16 @@ function inicializarWhatsApp() {
 
       whatsappClient = new Client({
         authStrategy: new LocalAuth({
-          name: "pix-sicredi-session"
+          name: "pix-sicredi-session",
+          dataPath: "./whatsapp-session"
         }),
-        puppeteer: puppeteerOptions
+        puppeteer: puppeteerOptions,
+        webVersionCache: {
+          type: 'remote',
+          remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        },
+        takeoverOnConflict: true,
+        restartOnAuthFail: true
       });
 
       whatsappClient.on('qr', (qr) => {
@@ -163,6 +185,7 @@ function inicializarWhatsApp() {
       whatsappClient.on('ready', () => {
         console.log('✅ WhatsApp conectado e pronto para uso!');
         whatsappReady = true;
+        whatsappInitializing = false; // Resetar flag de inicialização
         currentQRCode = null; // Garantir que QR code seja limpo
         
         // Verificar informações do cliente
@@ -186,8 +209,31 @@ function inicializarWhatsApp() {
         whatsappReady = false;
         currentQRCode = null;
         
-        // Tentar reconectar após desconexão
-        if (reason !== 'LOGOUT') {
+        // Tratamento específico para diferentes tipos de desconexão
+        if (reason === 'LOGOUT') {
+          console.log('🔄 Logout detectado - limpando sessão e reinicializando...');
+          // Limpar sessão corrompida
+          setTimeout(async () => {
+            try {
+              if (whatsappClient) {
+                await whatsappClient.destroy();
+              }
+            } catch (e) {
+              console.log('⚠️ Erro ao destruir cliente:', e.message);
+            }
+            whatsappClient = null;
+            console.log('🔄 Reinicializando após logout...');
+            inicializarWhatsApp();
+          }, 5000);
+        } else if (reason === 'CONFLICT' || reason === 'KICKED') {
+          console.log('🔄 Conflito/expulsão detectado - aguardando antes de reconectar...');
+          setTimeout(() => {
+            if (!whatsappReady) {
+              console.log('🔄 Reinicializando após conflito...');
+              inicializarWhatsApp();
+            }
+          }, 15000); // Aguardar mais tempo em caso de conflito
+        } else {
           console.log('🔄 Tentando reconectar WhatsApp em 10 segundos...');
           setTimeout(() => {
             if (!whatsappReady) {
@@ -201,7 +247,14 @@ function inicializarWhatsApp() {
       whatsappClient.on('auth_failure', (msg) => {
         console.error('❌ Falha na autenticação WhatsApp:', msg);
         whatsappReady = false;
+        whatsappInitializing = false; // Resetar flag
         currentQRCode = null;
+        
+        // Tentar reinicializar após falha de autenticação
+        console.log('🔄 Tentando reinicializar após falha de autenticação em 10 segundos...');
+        setTimeout(() => {
+          inicializarWhatsApp();
+        }, 10000);
       });
 
       whatsappClient.on('message', (message) => {
@@ -216,6 +269,7 @@ function inicializarWhatsApp() {
       console.error('❌ Erro ao inicializar WhatsApp:', error.message);
       console.log('📱 WhatsApp não estará disponível nesta sessão');
       whatsappReady = false;
+      whatsappInitializing = false; // Resetar flag em caso de erro
     }
   } else {
     console.log('📱 WhatsApp desabilitado (WHATSAPP_ENABLED != true)');
@@ -3873,6 +3927,7 @@ app.post("/whatsapp-reconnect", async (req, res) => {
     // Resetar variáveis
     whatsappClient = null;
     whatsappReady = false;
+    whatsappInitializing = false;
     currentQRCode = null;
     
     // Aguardar um pouco antes de reinicializar

@@ -27,6 +27,7 @@ logs/
 # Sessão WhatsApp (contém dados sensíveis)
 .wwebjs_auth/
 .wwebjs_cache/
+whatsapp-session/
 
 # Puppeteer (navegador baixado automaticamente)
 .local-chromium/
