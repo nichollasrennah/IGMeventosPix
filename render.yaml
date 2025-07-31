@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: pix-sicredi-middleware
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WHATSAPP_ENABLED
+        value: false  # Desabilitar WhatsApp temporariamente
+      - key: PORT
+        value: 3000
+    # Adicione suas outras variáveis de ambiente Sicredi:
+    # - key: SICREDI_ENV
+    #   value: homolog
+    # - key: SICREDI_HOMOLOG_CLIENT_ID
+    #   value: seu_client_id
+    # - key: SICREDI_HOMOLOG_CLIENT_SECRET  
+    #   value: seu_client_secret
+    # - key: SICREDI_HOMOLOG_PIX_KEY
+    #   value: sua_chave_pix
