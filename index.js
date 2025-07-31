@@ -144,6 +144,7 @@ function inicializarWhatsApp() {
       whatsappClient.on('qr', (qr) => {
         console.log('📱 QR Code do WhatsApp:');
         currentQRCode = qr; // Armazenar QR code atual
+        whatsappReady = false; // Garantir que está como false durante QR code
         
         if (process.env.NODE_ENV !== 'production') {
           qrcode.generate(qr, { small: true });
@@ -153,20 +154,59 @@ function inicializarWhatsApp() {
         console.log('🌐 Acesse: /whatsapp-qr para ver o QR code no navegador');
       });
 
+      whatsappClient.on('authenticated', (session) => {
+        console.log('🔐 WhatsApp autenticado com sucesso!');
+        console.log('📱 Aguardando conexão completa...');
+        currentQRCode = null; // Limpar QR code após autenticação
+      });
+
       whatsappClient.on('ready', () => {
-        console.log('✅ WhatsApp conectado com sucesso!');
+        console.log('✅ WhatsApp conectado e pronto para uso!');
         whatsappReady = true;
-        currentQRCode = null; // Limpar QR code após conexão
+        currentQRCode = null; // Garantir que QR code seja limpo
+        
+        // Verificar informações do cliente
+        whatsappClient.info.then(info => {
+          console.log(`📞 WhatsApp conectado como: ${info.pushname} (${info.wid.user})`);
+        }).catch(err => {
+          console.log('📞 WhatsApp conectado (informações não disponíveis)');
+        });
+      });
+
+      whatsappClient.on('loading_screen', (percent, message) => {
+        console.log(`🔄 Carregando WhatsApp: ${percent}% - ${message}`);
+      });
+
+      whatsappClient.on('change_state', (state) => {
+        console.log(`🔄 Estado WhatsApp alterado: ${state}`);
       });
 
       whatsappClient.on('disconnected', (reason) => {
         console.log('❌ WhatsApp desconectado:', reason);
         whatsappReady = false;
+        currentQRCode = null;
+        
+        // Tentar reconectar após desconexão
+        if (reason !== 'LOGOUT') {
+          console.log('🔄 Tentando reconectar WhatsApp em 10 segundos...');
+          setTimeout(() => {
+            if (!whatsappReady) {
+              console.log('🔄 Reinicializando WhatsApp...');
+              inicializarWhatsApp();
+            }
+          }, 10000);
+        }
       });
 
       whatsappClient.on('auth_failure', (msg) => {
         console.error('❌ Falha na autenticação WhatsApp:', msg);
         whatsappReady = false;
+        currentQRCode = null;
+      });
+
+      whatsappClient.on('message', (message) => {
+        // Log apenas para debug (não processar mensagens recebidas)
+        console.log(`📨 Mensagem recebida de ${message.from}: ${message.body.substring(0, 50)}...`);
       });
 
       whatsappClient.initialize();
@@ -1274,7 +1314,7 @@ app.post("/gerar-pix", async (req, res) => {
     // Payload seguindo a especificação PIX
     const payload = {
       calendario: { 
-        expiracao: 3600 // 1 hora
+        expiracao: 172800 // 48 horas em segundos
       },
       devedor: { 
         cpf: cpfLimpo,
@@ -1768,7 +1808,7 @@ app.post("/debug-payload", (req, res) => {
     
     const payload = {
       calendario: { 
-        expiracao: 3600
+        expiracao: 172800 // 48 horas em segundos
       },
       devedor: { 
         cpf: cpfLimpo,
@@ -2314,7 +2354,7 @@ app.post("/webhook/novo-pagamento", async (req, res) => {
     // Preparar payload
     const payload = {
       calendario: { 
-        expiracao: 3600
+        expiracao: 172800 // 48 horas em segundos
       },
       devedor: { 
         cpf: validacao.cpfLimpo,
@@ -2578,7 +2618,9 @@ app.post("/gerar-cobrancas-lote", async (req, res) => {
         
         // Preparar payload
         const payload = {
-          calendario: { expiracao: 3600 },
+          calendario: { 
+            expiracao: 172800 // 48 horas em segundos 
+          },
           devedor: { 
             cpf: validacao.cpfLimpo,
             nome: validacao.nomeLimpo
@@ -3603,23 +3645,46 @@ app.post("/enviar-whatsapp", async (req, res) => {
 });
 
 // Endpoint para verificar status do WhatsApp
-app.get("/whatsapp-status", (req, res) => {
+app.get("/whatsapp-status", async (req, res) => {
+  let clientState = 'unknown';
+  let clientInfo = null;
+  
+  try {
+    if (whatsappClient) {
+      clientState = await whatsappClient.getState();
+      if (whatsappReady) {
+        clientInfo = await whatsappClient.info;
+      }
+    }
+  } catch (error) {
+    console.log('Erro ao obter estado do cliente:', error.message);
+  }
+
   res.json({
     conectado: whatsappReady,
     cliente_ativo: !!whatsappClient,
+    estado_cliente: clientState,
     habilitado: process.env.WHATSAPP_ENABLED === 'true',
     qr_code_disponivel: !!currentQRCode,
+    informacoes_cliente: clientInfo ? {
+      nome: clientInfo.pushname,
+      numero: clientInfo.wid?.user,
+      plataforma: clientInfo.platform
+    } : null,
     ambiente: AMBIENTE_ATUAL,
     node_env: process.env.NODE_ENV,
     puppeteer_info: {
       chrome_bin: process.env.CHROME_BIN || 'não definido',
       puppeteer_executable: process.env.PUPPETEER_EXECUTABLE_PATH || 'não definido'
     },
+    timestamp: new Date().toISOString(),
     dica: whatsappReady ? 
       'WhatsApp funcionando normalmente' : 
       currentQRCode ? 
         'QR Code disponível em /whatsapp-qr - escaneie para conectar' :
-        'Para habilitar: defina WHATSAPP_ENABLED=true e CHROME_BIN (se necessário) no ambiente'
+        clientState === 'CONNECTED' ?
+          'Cliente conectado mas não pronto - pode estar carregando' :
+          'Para habilitar: defina WHATSAPP_ENABLED=true e CHROME_BIN (se necessário) no ambiente'
   });
 });
 
@@ -3791,6 +3856,49 @@ app.get("/whatsapp-qr", (req, res) => {
   `);
 });
 
+// Endpoint para forçar reconexão do WhatsApp
+app.post("/whatsapp-reconnect", async (req, res) => {
+  try {
+    console.log('🔄 Reconexão forçada do WhatsApp solicitada');
+    
+    if (whatsappClient) {
+      try {
+        await whatsappClient.destroy();
+        console.log('🧹 Cliente WhatsApp anterior destruído');
+      } catch (error) {
+        console.log('⚠️ Erro ao destruir cliente anterior:', error.message);
+      }
+    }
+    
+    // Resetar variáveis
+    whatsappClient = null;
+    whatsappReady = false;
+    currentQRCode = null;
+    
+    // Aguardar um pouco antes de reinicializar
+    setTimeout(() => {
+      console.log('🔄 Reinicializando WhatsApp após reconexão...');
+      inicializarWhatsApp();
+    }, 2000);
+    
+    res.json({
+      status: "reconectando",
+      message: "WhatsApp sendo reinicializado",
+      timestamp: new Date().toISOString(),
+      dica: "Verifique os logs e /whatsapp-status em alguns segundos"
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro na reconexão WhatsApp:", error);
+    res.status(500).json({
+      status: "erro",
+      message: "Falha na reconexão",
+      detalhes: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Endpoint para obter QR Code como imagem (redirect para API externa)
 app.get("/whatsapp-qr-image", (req, res) => {
   if (!currentQRCode) {
@@ -3898,7 +4006,7 @@ app.post("/gerar-pix-whatsapp", async (req, res) => {
 
     const payload = {
       calendario: { 
-        expiracao: 3600
+        expiracao: 172800 // 48 horas em segundos
       },
       devedor: { 
         cpf: cpfLimpo,
@@ -4032,7 +4140,8 @@ app.listen(PORT, () => {
    • GET  /listar-chaves - Listar chaves PIX
    • POST /enviar-whatsapp - Enviar informações de pagamento via WhatsApp
    • POST /appsheet-whatsapp - WhatsApp otimizado para AppSheet (resposta rápida)
-   • GET  /whatsapp-status - Verificar status da conexão WhatsApp
+   • GET  /whatsapp-status - Verificar status detalhado da conexão WhatsApp
+   • POST /whatsapp-reconnect - Forçar reconexão/reinicialização do WhatsApp
    • GET  /whatsapp-qr - Página web para escanear QR Code do WhatsApp
    • GET  /whatsapp-qr-image - QR Code como imagem PNG
    • GET  /whatsapp-qr-data - Dados do QR Code em JSON
