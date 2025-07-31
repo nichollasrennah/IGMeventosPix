@@ -2217,35 +2217,20 @@ app.get("/relatorio-appsheet", async (req, res) => {
     
     console.log(`📋 Retornando ${cobrancasFormatadas.length} cobranças para AppSheet`);
     
-    // Retornar objeto com propriedades indexadas para AppSheet
-    const objetoCObrancas = {};
-    
-    // Converter array em objeto com chaves numeradas
-    cobrancasFormatadas.forEach((cobranca, index) => {
-      objetoCObrancas[`cobranca${index}`] = cobranca;
-    });
-    
-    // Adicionar informações extras
-    objetoCObrancas.total = cobrancasFormatadas.length;
-    objetoCObrancas.primeiro_devedor = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].devedor : "";
-    objetoCObrancas.primeiro_valor = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].valor : "0.00";
-    objetoCObrancas.primeiro_status = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].status : "";
-    objetoCObrancas.primeiro_pago = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].pago : "NAO";
+    // Retornar objeto simples com as cobranças
+    const resultado = {
+      cobrancas: cobrancasFormatadas,
+      total: cobrancasFormatadas.length
+    };
     
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.json(objetoCObrancas);
+    res.json(resultado);
     
   } catch (error) {
     console.error("❌ Erro no relatório AppSheet:", error);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.status(500).json({
-      erro: true,
-      total: 0,
-      primeiro_devedor: "Erro ao buscar dados",
-      primeiro_valor: "0.00",
-      primeiro_status: "ERRO",
-      primeiro_pago: "NAO",
-      cobranca0: {
+      cobrancas: [{
         txid: "erro_sistema",
         valor: "0.00",
         devedor: "Erro ao buscar dados",
@@ -2255,49 +2240,44 @@ app.get("/relatorio-appsheet", async (req, res) => {
         data_pagamento: null,
         ambiente: AMBIENTE_ATUAL,
         tipo: "erro"
-      }
+      }],
+      total: 0
     });
   }
 });
 
-// Endpoint de teste para AppSheet - formato objeto
+// Endpoint de teste para AppSheet - formato objeto simples
 app.get("/test-appsheet-format", async (req, res) => {
   try {
-    // Dados de teste simples em formato objeto
+    // Dados de teste em formato objeto simples
     const testResponse = {
-      total: 2,
-      primeiro_devedor: "João Teste",
-      primeiro_valor: "100.00",
-      primeiro_status: "ATIVA",
-      primeiro_pago: "NAO",
-      cobranca0: {
-        txid: "teste123",
-        valor: "100.00",
-        devedor: "João Teste",
-        status: "ATIVA",
-        pago: "NAO"
-      },
-      cobranca1: {
-        txid: "teste456", 
-        valor: "200.00",
-        devedor: "Maria Teste",
-        status: "ATIVA",
-        pago: "SIM"
-      }
+      cobrancas: [
+        {
+          txid: "teste123",
+          valor: "100.00",
+          devedor: "João Teste",
+          status: "ATIVA",
+          pago: "NAO"
+        },
+        {
+          txid: "teste456", 
+          valor: "200.00",
+          devedor: "Maria Teste",
+          status: "ATIVA",
+          pago: "SIM"
+        }
+      ],
+      total: 2
     };
     
-    console.log("🧪 Teste de formato AppSheet - objeto com chaves");
+    console.log("🧪 Teste de formato AppSheet - objeto simples");
     res.setHeader('Content-Type', 'application/json');
     res.json(testResponse);
     
   } catch (error) {
     res.status(500).json({
-      erro: true,
-      total: 0,
-      primeiro_devedor: "Erro",
-      primeiro_valor: "0.00",
-      primeiro_status: "ERRO",
-      primeiro_pago: "NAO"
+      cobrancas: [],
+      total: 0
     });
   }
 });
