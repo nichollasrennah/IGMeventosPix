@@ -1,0 +1,21 @@
+{
+  "name": "My Server",
+  "host": "ftp.murinelli.com.br",
+  "protocol": "ftp",
+  "port": 21,
+  "username": "murinelli1",
+  "password": "J053#Mur1n3ll1",
+  "remotePath": "/",
+  "uploadOnSave": true,
+  "useTempFile": false,
+  "openSsh": false,
+  "watcher": {
+    "files": "**/*",
+    "autoUpload": true,
+    "autoDelete": false,
+    "ignoreCreate": false,
+    "ignoreUpdate": false,
+    "ignoreDelete": true
+  },
+  "ignore": []
+}
