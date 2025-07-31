@@ -2168,6 +2168,76 @@ async function processarLotePagamentos(pagamentos, configuracoes, res) {
   return res.json({ message: "Implementar lógica do lote aqui" });
 }
 
+// Endpoint específico para AppSheet - retorna array simples
+app.get("/relatorio-appsheet", async (req, res) => {
+  try {
+    const { 
+      data_inicio, 
+      data_fim, 
+      status_filtro 
+    } = req.query;
+    
+    const token = await obterToken();
+    
+    // Definir período (padrão: últimos 7 dias)
+    const fim = data_fim ? new Date(data_fim) : new Date();
+    const inicio = data_inicio ? new Date(data_inicio) : new Date(fim.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    const inicioISO = inicio.toISOString();
+    const fimISO = fim.toISOString();
+    
+    console.log(`📊 Gerando relatório AppSheet: ${inicioISO} até ${fimISO}`);
+    
+    // Buscar cobranças do período
+    const cobrancas = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cob?inicio=${inicioISO}&fim=${fimISO}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+      }
+    );
+    
+    const dados = cobrancas.data.cobs || [];
+    
+    // Retornar array simples para AppSheet
+    const cobrancasFormatadas = dados.map(cob => ({
+      txid: cob.txid,
+      valor: cob.valor?.original || "0.00",
+      devedor: cob.devedor?.nome || "Sem nome",
+      status: cob.status || "DESCONHECIDO",
+      data_criacao: cob.calendario?.criacao || null,
+      pago: cob.pix?.length > 0 ? "SIM" : "NAO",
+      data_pagamento: cob.pix?.[0]?.horario || null,
+      ambiente: AMBIENTE_ATUAL,
+      tipo: "cobranca_imediata"
+    }));
+    
+    console.log(`📋 Retornando ${cobrancasFormatadas.length} cobranças para AppSheet`);
+    
+    // Retornar apenas o array para o AppSheet
+    res.json(cobrancasFormatadas);
+    
+  } catch (error) {
+    console.error("❌ Erro no relatório AppSheet:", error);
+    res.status(500).json([{
+      erro: "Falha ao gerar relatório",
+      detalhes: error.message,
+      txid: "erro",
+      valor: "0.00",
+      devedor: "ERRO",
+      status: "ERRO",
+      data_criacao: new Date().toISOString(),
+      pago: "NAO",
+      data_pagamento: null,
+      ambiente: AMBIENTE_ATUAL,
+      tipo: "erro"
+    }]);
+  }
+});
+
 // Endpoint de relatório/dashboard
 app.get("/relatorio-cobrancas", async (req, res) => {
   try {
@@ -2270,6 +2340,8 @@ app.listen(PORT, () => {
    • POST /debug-payload - Debug cobrança imediata
    • POST /debug-payload-vencimento - Debug cobrança com vencimento
    • POST /webhook/novo-pagamento - Webhook AppSheet
+   • GET  /relatorio-appsheet - Relatório para AppSheet (array simples)
+   • GET  /relatorio-cobrancas - Relatório completo (objeto estruturado)
    • GET  /test-auth - Testar autenticação
    • GET  /listar-chaves - Listar chaves PIX
   `);
