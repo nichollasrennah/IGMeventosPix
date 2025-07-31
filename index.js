@@ -306,17 +306,54 @@ async function enviarWhatsApp(numero, mensagem) {
     throw new Error('WhatsApp não está conectado');
   }
 
-  // Formatar número (remover caracteres especiais, adicionar código do país se necessário)
-  const numeroLimpo = numero.replace(/\D/g, '');
-  const numeroFormatado = numeroLimpo.startsWith('55') ? numeroLimpo : `55${numeroLimpo}`;
-  const chatId = `${numeroFormatado}@c.us`;
+  // Limpar e formatar número
+  let numeroLimpo = numero.replace(/\D/g, '');
+  
+  // Remover código do país se já estiver presente
+  if (numeroLimpo.startsWith('55')) {
+    numeroLimpo = numeroLimpo.substring(2);
+  }
+  
+  // Verificar se é número brasileiro válido (10 ou 11 dígitos)
+  if (numeroLimpo.length === 10) {
+    // Adicionar 9 para celulares antigos (ex: 8499975814 -> 84999758144)
+    numeroLimpo = numeroLimpo.substring(0, 2) + '9' + numeroLimpo.substring(2);
+  }
+  
+  if (numeroLimpo.length !== 11) {
+    throw new Error(`Número brasileiro inválido: ${numeroLimpo} (deve ter 11 dígitos)`);
+  }
+  
+  // Formato final: 55 + DDD + 9XXXXXXXX
+  const numeroCompleto = `55${numeroLimpo}`;
+  const chatId = `${numeroCompleto}@c.us`;
+  
+  console.log(`📞 Tentando enviar para: ${numero} -> ${numeroCompleto} (${chatId})`);
 
   try {
-    await whatsappClient.sendMessage(chatId, mensagem);
-    return { sucesso: true, numero: numeroFormatado };
+    // Verificar se o número existe no WhatsApp
+    const numberId = await whatsappClient.getNumberId(chatId);
+    if (!numberId) {
+      throw new Error(`Número ${numeroCompleto} não possui WhatsApp ou não existe`);
+    }
+    
+    console.log(`✅ Número validado: ${numberId._serialized}`);
+    
+    // Enviar mensagem
+    const messageResult = await whatsappClient.sendMessage(numberId._serialized, mensagem);
+    console.log(`📤 Mensagem enviada com ID: ${messageResult.id.id}`);
+    
+    return { 
+      sucesso: true, 
+      numero: numeroCompleto,
+      numeroOriginal: numero,
+      chatId: numberId._serialized,
+      messageId: messageResult.id.id
+    };
+    
   } catch (error) {
-    console.error('Erro ao enviar WhatsApp:', error);
-    throw error;
+    console.error(`❌ Erro ao enviar WhatsApp para ${numeroCompleto}:`, error.message);
+    throw new Error(`Falha no envio: ${error.message}`);
   }
 }
 
@@ -3611,7 +3648,10 @@ app.post("/appsheet-whatsapp", async (req, res) => {
 
         // Enviar WhatsApp
         const resultado = await enviarWhatsApp(telefone, mensagem);
-        console.log(`✅ AppSheet WhatsApp enviado para ${resultado.numero}`);
+        console.log(`✅ AppSheet WhatsApp enviado:`);
+        console.log(`   📞 Número: ${resultado.numeroOriginal} -> ${resultado.numero}`);
+        console.log(`   💬 Chat ID: ${resultado.chatId}`);
+        console.log(`   📨 Message ID: ${resultado.messageId}`);
 
       } catch (error) {
         console.error("❌ Erro no processamento assíncrono AppSheet WhatsApp:", error.message);
@@ -4002,6 +4042,44 @@ app.post("/whatsapp-reconnect", async (req, res) => {
   }
 });
 
+// Endpoint para testar envio WhatsApp
+app.post("/whatsapp-test", async (req, res) => {
+  try {
+    const { telefone, mensagem = "🤖 Teste de conectividade WhatsApp" } = req.body;
+
+    if (!telefone) {
+      return res.status(400).json({
+        erro: "Número de telefone é obrigatório",
+        exemplo: { telefone: "84999758144" }
+      });
+    }
+
+    if (!whatsappReady) {
+      return res.status(503).json({
+        erro: "WhatsApp não está conectado",
+        status: { conectado: whatsappReady, cliente_ativo: !!whatsappClient }
+      });
+    }
+
+    // Testar envio
+    const resultado = await enviarWhatsApp(telefone, mensagem);
+
+    res.json({
+      sucesso: true,
+      resultado: resultado,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error("❌ Erro no teste WhatsApp:", error);
+    res.status(500).json({
+      erro: "Falha no teste",
+      detalhes: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Endpoint para limpar sessão WhatsApp completamente
 app.post("/whatsapp-reset", async (req, res) => {
   try {
@@ -4303,6 +4381,7 @@ app.listen(PORT, () => {
    • GET  /whatsapp-status - Verificar status detalhado da conexão WhatsApp
    • POST /whatsapp-reconnect - Forçar reconexão/reinicialização do WhatsApp
    • POST /whatsapp-reset - Reset completo do WhatsApp (limpa sessão)
+   • POST /whatsapp-test - Testar envio de mensagem WhatsApp
    • GET  /whatsapp-qr - Página web para escanear QR Code do WhatsApp
    • GET  /whatsapp-qr-image - QR Code como imagem PNG
    • GET  /whatsapp-qr-data - Dados do QR Code em JSON
