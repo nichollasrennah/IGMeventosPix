@@ -2168,7 +2168,7 @@ async function processarLotePagamentos(pagamentos, configuracoes, res) {
   return res.json({ message: "Implementar lógica do lote aqui" });
 }
 
-// Endpoint específico para AppSheet - retorna array simples
+// Endpoint específico para AppSheet - retorna objeto com arrays simples
 app.get("/relatorio-appsheet", async (req, res) => {
   try {
     const { 
@@ -2217,17 +2217,17 @@ app.get("/relatorio-appsheet", async (req, res) => {
     
     console.log(`📋 Retornando ${cobrancasFormatadas.length} cobranças para AppSheet`);
     
-    // Retornar apenas o array para o AppSheet
+    // Retornar array direto para AppSheet (formato mais compatível)
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.json(cobrancasFormatadas);
     
   } catch (error) {
     console.error("❌ Erro no relatório AppSheet:", error);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.status(500).json([{
-      erro: "Falha ao gerar relatório",
-      detalhes: error.message,
-      txid: "erro",
+      txid: "erro_sistema",
       valor: "0.00",
-      devedor: "ERRO",
+      devedor: "Erro ao buscar dados",
       status: "ERRO",
       data_criacao: new Date().toISOString(),
       pago: "NAO",
@@ -2235,6 +2235,113 @@ app.get("/relatorio-appsheet", async (req, res) => {
       ambiente: AMBIENTE_ATUAL,
       tipo: "erro"
     }]);
+  }
+});
+
+// Endpoint de teste para AppSheet - diferentes formatos
+app.get("/test-appsheet-format", async (req, res) => {
+  try {
+    // Dados de teste simples
+    const testData = [
+      {
+        txid: "teste123",
+        valor: "100.00",
+        devedor: "João Teste",
+        status: "ATIVA",
+        pago: "NAO"
+      },
+      {
+        txid: "teste456", 
+        valor: "200.00",
+        devedor: "Maria Teste",
+        status: "ATIVA",
+        pago: "SIM"
+      }
+    ];
+    
+    console.log("🧪 Teste de formato AppSheet");
+    res.setHeader('Content-Type', 'application/json');
+    res.json(testData);
+    
+  } catch (error) {
+    res.status(500).json([{ 
+      txid: "erro",
+      valor: "0.00", 
+      devedor: "Erro",
+      status: "ERRO",
+      pago: "NAO"
+    }]);
+  }
+});
+
+// Endpoint alternativo para AppSheet com estrutura mais simples
+app.get("/appsheet-cobrancas", async (req, res) => {
+  try {
+    const { 
+      data_inicio, 
+      data_fim 
+    } = req.query;
+    
+    const token = await obterToken();
+    
+    // Definir período (padrão: últimos 7 dias)
+    const fim = data_fim ? new Date(data_fim) : new Date();
+    const inicio = data_inicio ? new Date(data_inicio) : new Date(fim.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    const inicioISO = inicio.toISOString();
+    const fimISO = fim.toISOString();
+    
+    console.log(`📊 AppSheet: Buscando cobranças de ${inicioISO} até ${fimISO}`);
+    
+    // Buscar cobranças do período
+    const cobrancas = await fazerRequisicaoSicredi(
+      `${CONFIG.api_url}/cob?inicio=${inicioISO}&fim=${fimISO}`,
+      {
+        method: 'GET',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+      }
+    );
+    
+    const dados = cobrancas.data.cobs || [];
+    console.log(`📊 Encontradas ${dados.length} cobranças`);
+    
+    // Estrutura muito simples para o AppSheet
+    const response = {
+      sucesso: true,
+      total_encontrado: dados.length,
+      primeiro_devedor: dados.length > 0 ? dados[0].devedor?.nome || "N/A" : "Nenhum",
+      primeiro_valor: dados.length > 0 ? dados[0].valor?.original || "0.00" : "0.00",
+      primeiro_status: dados.length > 0 ? dados[0].status || "N/A" : "N/A",
+      primeiro_pago: dados.length > 0 ? (dados[0].pix?.length > 0 ? "SIM" : "NAO") : "NAO",
+      // Colocar dados como string para evitar problemas de parsing
+      dados_json: JSON.stringify(dados.map(cob => ({
+        txid: cob.txid,
+        valor: cob.valor?.original || "0.00",
+        devedor: cob.devedor?.nome || "Sem nome",
+        status: cob.status || "DESCONHECIDO",
+        data_criacao: cob.calendario?.criacao || null,
+        pago: cob.pix?.length > 0 ? "SIM" : "NAO"
+      })))
+    };
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.json(response);
+    
+  } catch (error) {
+    console.error("❌ Erro AppSheet cobranças:", error);
+    res.status(500).json({
+      sucesso: false,
+      erro: error.message,
+      total_encontrado: 0,
+      primeiro_devedor: "ERRO",
+      primeiro_valor: "0.00",
+      primeiro_status: "ERRO",
+      primeiro_pago: "NAO",
+      dados_json: "[]"
+    });
   }
 });
 
@@ -2341,6 +2448,7 @@ app.listen(PORT, () => {
    • POST /debug-payload-vencimento - Debug cobrança com vencimento
    • POST /webhook/novo-pagamento - Webhook AppSheet
    • GET  /relatorio-appsheet - Relatório para AppSheet (array simples)
+   • GET  /appsheet-cobrancas - Relatório AppSheet (propriedades diretas)
    • GET  /relatorio-cobrancas - Relatório completo (objeto estruturado)
    • GET  /test-auth - Testar autenticação
    • GET  /listar-chaves - Listar chaves PIX
