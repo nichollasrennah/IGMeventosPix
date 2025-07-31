@@ -2217,60 +2217,88 @@ app.get("/relatorio-appsheet", async (req, res) => {
     
     console.log(`📋 Retornando ${cobrancasFormatadas.length} cobranças para AppSheet`);
     
-    // Retornar array direto para AppSheet (formato mais compatível)
+    // Retornar objeto com propriedades indexadas para AppSheet
+    const objetoCObrancas = {};
+    
+    // Converter array em objeto com chaves numeradas
+    cobrancasFormatadas.forEach((cobranca, index) => {
+      objetoCObrancas[`cobranca${index}`] = cobranca;
+    });
+    
+    // Adicionar informações extras
+    objetoCObrancas.total = cobrancasFormatadas.length;
+    objetoCObrancas.primeiro_devedor = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].devedor : "";
+    objetoCObrancas.primeiro_valor = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].valor : "0.00";
+    objetoCObrancas.primeiro_status = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].status : "";
+    objetoCObrancas.primeiro_pago = cobrancasFormatadas.length > 0 ? cobrancasFormatadas[0].pago : "NAO";
+    
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.json(cobrancasFormatadas);
+    res.json(objetoCObrancas);
     
   } catch (error) {
     console.error("❌ Erro no relatório AppSheet:", error);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.status(500).json([{
-      txid: "erro_sistema",
-      valor: "0.00",
-      devedor: "Erro ao buscar dados",
-      status: "ERRO",
-      data_criacao: new Date().toISOString(),
-      pago: "NAO",
-      data_pagamento: null,
-      ambiente: AMBIENTE_ATUAL,
-      tipo: "erro"
-    }]);
+    res.status(500).json({
+      erro: true,
+      total: 0,
+      primeiro_devedor: "Erro ao buscar dados",
+      primeiro_valor: "0.00",
+      primeiro_status: "ERRO",
+      primeiro_pago: "NAO",
+      cobranca0: {
+        txid: "erro_sistema",
+        valor: "0.00",
+        devedor: "Erro ao buscar dados",
+        status: "ERRO",
+        data_criacao: new Date().toISOString(),
+        pago: "NAO",
+        data_pagamento: null,
+        ambiente: AMBIENTE_ATUAL,
+        tipo: "erro"
+      }
+    });
   }
 });
 
-// Endpoint de teste para AppSheet - diferentes formatos
+// Endpoint de teste para AppSheet - formato objeto
 app.get("/test-appsheet-format", async (req, res) => {
   try {
-    // Dados de teste simples
-    const testData = [
-      {
+    // Dados de teste simples em formato objeto
+    const testResponse = {
+      total: 2,
+      primeiro_devedor: "João Teste",
+      primeiro_valor: "100.00",
+      primeiro_status: "ATIVA",
+      primeiro_pago: "NAO",
+      cobranca0: {
         txid: "teste123",
         valor: "100.00",
         devedor: "João Teste",
         status: "ATIVA",
         pago: "NAO"
       },
-      {
+      cobranca1: {
         txid: "teste456", 
         valor: "200.00",
         devedor: "Maria Teste",
         status: "ATIVA",
         pago: "SIM"
       }
-    ];
+    };
     
-    console.log("🧪 Teste de formato AppSheet");
+    console.log("🧪 Teste de formato AppSheet - objeto com chaves");
     res.setHeader('Content-Type', 'application/json');
-    res.json(testData);
+    res.json(testResponse);
     
   } catch (error) {
-    res.status(500).json([{ 
-      txid: "erro",
-      valor: "0.00", 
-      devedor: "Erro",
-      status: "ERRO",
-      pago: "NAO"
-    }]);
+    res.status(500).json({
+      erro: true,
+      total: 0,
+      primeiro_devedor: "Erro",
+      primeiro_valor: "0.00",
+      primeiro_status: "ERRO",
+      primeiro_pago: "NAO"
+    });
   }
 });
 
