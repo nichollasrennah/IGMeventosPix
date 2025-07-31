@@ -2224,7 +2224,7 @@ app.get("/relatorio-appsheet", async (req, res) => {
     };
     
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.json(resultado);
+    res.json(response.resultado);
     
   } catch (error) {
     console.error("❌ Erro no relatório AppSheet:", error);
