@@ -262,7 +262,31 @@ function inicializarWhatsApp() {
         console.log(`📨 Mensagem recebida de ${message.from}: ${message.body.substring(0, 50)}...`);
       });
 
-      whatsappClient.initialize();
+      // Inicializar com tratamento de erro melhorado
+      whatsappClient.initialize().catch(error => {
+        console.error('❌ Falha na inicialização do WhatsApp:', error.message);
+        whatsappInitializing = false;
+        whatsappReady = false;
+        
+        // Se for erro de contexto de execução, tentar novamente após delay maior
+        if (error.message.includes('Execution context was destroyed') || 
+            error.message.includes('navigation')) {
+          console.log('🔄 Erro de contexto detectado, tentando novamente em 15 segundos...');
+          setTimeout(() => {
+            if (!whatsappReady) {
+              inicializarWhatsApp();
+            }
+          }, 15000);
+        } else {
+          console.log('🔄 Tentando reinicializar em 10 segundos...');
+          setTimeout(() => {
+            if (!whatsappReady) {
+              inicializarWhatsApp();
+            }
+          }, 10000);
+        }
+      });
+      
       console.log('🔄 Inicializando WhatsApp...');
       
     } catch (error) {
@@ -3915,27 +3939,7 @@ app.post("/whatsapp-reconnect", async (req, res) => {
   try {
     console.log('🔄 Reconexão forçada do WhatsApp solicitada');
     
-    if (whatsappClient) {
-      try {
-        await whatsappClient.destroy();
-        console.log('🧹 Cliente WhatsApp anterior destruído');
-      } catch (error) {
-        console.log('⚠️ Erro ao destruir cliente anterior:', error.message);
-      }
-    }
-    
-    // Resetar variáveis
-    whatsappClient = null;
-    whatsappReady = false;
-    whatsappInitializing = false;
-    currentQRCode = null;
-    
-    // Aguardar um pouco antes de reinicializar
-    setTimeout(() => {
-      console.log('🔄 Reinicializando WhatsApp após reconexão...');
-      inicializarWhatsApp();
-    }, 2000);
-    
+    // Responder imediatamente
     res.json({
       status: "reconectando",
       message: "WhatsApp sendo reinicializado",
@@ -3943,11 +3947,112 @@ app.post("/whatsapp-reconnect", async (req, res) => {
       dica: "Verifique os logs e /whatsapp-status em alguns segundos"
     });
     
+    // Processar reconexão de forma assíncrona
+    setImmediate(async () => {
+      try {
+        // Resetar flags primeiro
+        whatsappReady = false;
+        whatsappInitializing = false;
+        currentQRCode = null;
+        
+        if (whatsappClient) {
+          try {
+            console.log('🧹 Destruindo cliente WhatsApp anterior...');
+            await whatsappClient.destroy();
+            console.log('✅ Cliente anterior destruído com sucesso');
+          } catch (error) {
+            console.log('⚠️ Erro ao destruir cliente anterior:', error.message);
+          }
+        }
+        
+        // Limpar referência
+        whatsappClient = null;
+        
+        // Aguardar mais tempo para garantir limpeza completa
+        console.log('⏱️ Aguardando 5 segundos para limpeza completa...');
+        setTimeout(() => {
+          console.log('🔄 Reinicializando WhatsApp após reconexão...');
+          inicializarWhatsApp();
+        }, 5000);
+        
+      } catch (error) {
+        console.error("❌ Erro no processamento assíncrono da reconexão:", error.message);
+        
+        // Em caso de erro, tentar reinicialização simples
+        whatsappClient = null;
+        whatsappReady = false;
+        whatsappInitializing = false;
+        currentQRCode = null;
+        
+        setTimeout(() => {
+          console.log('🔄 Tentativa de recuperação após erro...');
+          inicializarWhatsApp();
+        }, 10000);
+      }
+    });
+    
   } catch (error) {
     console.error("❌ Erro na reconexão WhatsApp:", error);
     res.status(500).json({
       status: "erro",
       message: "Falha na reconexão",
+      detalhes: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint para limpar sessão WhatsApp completamente
+app.post("/whatsapp-reset", async (req, res) => {
+  try {
+    console.log('🗑️ Reset completo do WhatsApp solicitado');
+    
+    // Responder imediatamente
+    res.json({
+      status: "resetando",
+      message: "Limpando sessão WhatsApp completamente",
+      timestamp: new Date().toISOString(),
+      dica: "Aguarde 10-15 segundos, depois verifique /whatsapp-status"
+    });
+    
+    // Processar reset de forma assíncrona
+    setImmediate(async () => {
+      try {
+        // Resetar flags
+        whatsappReady = false;
+        whatsappInitializing = false;
+        currentQRCode = null;
+        
+        // Destruir cliente se existir
+        if (whatsappClient) {
+          try {
+            console.log('🧹 Destruindo cliente atual...');
+            await whatsappClient.destroy();
+            console.log('✅ Cliente destruído');
+          } catch (error) {
+            console.log('⚠️ Erro ao destruir cliente:', error.message);
+          }
+        }
+        
+        whatsappClient = null;
+        
+        // Aguardar antes de limpar sessão e reinicializar
+        console.log('⏱️ Aguardando 8 segundos para reset completo...');
+        setTimeout(() => {
+          console.log('🔄 Iniciando novo processo WhatsApp após reset...');
+          inicializarWhatsApp();
+        }, 8000);
+        
+      } catch (error) {
+        console.error("❌ Erro no reset WhatsApp:", error.message);
+      }
+    });
+    
+  } catch (error) {
+    console.error("❌ Erro no reset WhatsApp:", error);
+    res.status(500).json({
+      status: "erro",
+      message: "Falha no reset",
       detalhes: error.message,
       timestamp: new Date().toISOString()
     });
@@ -4197,6 +4302,7 @@ app.listen(PORT, () => {
    • POST /appsheet-whatsapp - WhatsApp otimizado para AppSheet (resposta rápida)
    • GET  /whatsapp-status - Verificar status detalhado da conexão WhatsApp
    • POST /whatsapp-reconnect - Forçar reconexão/reinicialização do WhatsApp
+   • POST /whatsapp-reset - Reset completo do WhatsApp (limpa sessão)
    • GET  /whatsapp-qr - Página web para escanear QR Code do WhatsApp
    • GET  /whatsapp-qr-image - QR Code como imagem PNG
    • GET  /whatsapp-qr-data - Dados do QR Code em JSON
