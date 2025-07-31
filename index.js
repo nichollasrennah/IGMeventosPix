@@ -96,34 +96,82 @@ let whatsappReady = false;
 // Inicializar cliente WhatsApp
 function inicializarWhatsApp() {
   if (process.env.WHATSAPP_ENABLED === 'true') {
-    whatsappClient = new Client({
-      authStrategy: new LocalAuth({
-        name: "pix-sicredi-session"
-      }),
-      puppeteer: {
+    try {
+      // Configurações específicas para produção
+      const puppeteerOptions = {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process', // Para ambientes com pouca memória
+          '--disable-gpu'
+        ]
+      };
+
+      // Em produção, especificar caminho do executável se necessário
+      if (process.env.NODE_ENV === 'production') {
+        // Para Render, Heroku e outros serviços de deploy
+        puppeteerOptions.args.push('--disable-web-security');
+        
+        // Verificar se existe um executável específico
+        const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || 
+                              process.env.CHROME_BIN || 
+                              '/usr/bin/google-chrome-stable';
+        
+        try {
+          const fs = require('fs');
+          if (fs.existsSync(executablePath)) {
+            puppeteerOptions.executablePath = executablePath;
+            console.log(`🔧 Usando Chrome em: ${executablePath}`);
+          }
+        } catch (e) {
+          console.log('⚠️ Não foi possível verificar caminho do Chrome, usando padrão');
+        }
       }
-    });
 
-    whatsappClient.on('qr', (qr) => {
-      console.log('📱 QR Code do WhatsApp:');
-      qrcode.generate(qr, { small: true });
-      console.log('Escaneie o QR code acima com seu WhatsApp para conectar');
-    });
+      whatsappClient = new Client({
+        authStrategy: new LocalAuth({
+          name: "pix-sicredi-session"
+        }),
+        puppeteer: puppeteerOptions
+      });
 
-    whatsappClient.on('ready', () => {
-      console.log('✅ WhatsApp conectado com sucesso!');
-      whatsappReady = true;
-    });
+      whatsappClient.on('qr', (qr) => {
+        console.log('📱 QR Code do WhatsApp:');
+        if (process.env.NODE_ENV !== 'production') {
+          qrcode.generate(qr, { small: true });
+        }
+        console.log('Escaneie o QR code acima com seu WhatsApp para conectar');
+        console.log('QR Code Data:', qr); // Para logs de produção
+      });
 
-    whatsappClient.on('disconnected', (reason) => {
-      console.log('❌ WhatsApp desconectado:', reason);
+      whatsappClient.on('ready', () => {
+        console.log('✅ WhatsApp conectado com sucesso!');
+        whatsappReady = true;
+      });
+
+      whatsappClient.on('disconnected', (reason) => {
+        console.log('❌ WhatsApp desconectado:', reason);
+        whatsappReady = false;
+      });
+
+      whatsappClient.on('auth_failure', (msg) => {
+        console.error('❌ Falha na autenticação WhatsApp:', msg);
+        whatsappReady = false;
+      });
+
+      whatsappClient.initialize();
+      console.log('🔄 Inicializando WhatsApp...');
+      
+    } catch (error) {
+      console.error('❌ Erro ao inicializar WhatsApp:', error.message);
+      console.log('📱 WhatsApp não estará disponível nesta sessão');
       whatsappReady = false;
-    });
-
-    whatsappClient.initialize();
-    console.log('🔄 Inicializando WhatsApp...');
+    }
   } else {
     console.log('📱 WhatsApp desabilitado (WHATSAPP_ENABLED != true)');
   }
@@ -204,6 +252,9 @@ SICREDI_HOMOLOG_TOKEN_URL=https://api-pix-h.sicredi.com.br/oauth/token
 # =====================================================
 # Habilitar integração WhatsApp (true/false)
 WHATSAPP_ENABLED=true
+# Caminho do executável Chrome (opcional para produção)
+# PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+# CHROME_BIN=/usr/bin/google-chrome-stable
 
 # =====================================================
 # OUTRAS CONFIGURAÇÕES
@@ -3379,7 +3430,13 @@ app.post("/enviar-whatsapp", async (req, res) => {
       return res.status(503).json({
         erro: "WhatsApp não está conectado",
         ambiente: AMBIENTE_ATUAL,
-        dica: "Verifique se WHATSAPP_ENABLED=true no .env e se o QR code foi escaneado"
+        status_whatsapp: {
+          habilitado: process.env.WHATSAPP_ENABLED === 'true',
+          cliente_ativo: !!whatsappClient,
+          conectado: whatsappReady
+        },
+        dica: "Verifique se WHATSAPP_ENABLED=true no .env e se o QR code foi escaneado",
+        alternativa: "Use o endpoint /gerar-pix-whatsapp que funciona mesmo com WhatsApp offline"
       });
     }
 
@@ -3444,7 +3501,15 @@ app.get("/whatsapp-status", (req, res) => {
     conectado: whatsappReady,
     cliente_ativo: !!whatsappClient,
     habilitado: process.env.WHATSAPP_ENABLED === 'true',
-    ambiente: AMBIENTE_ATUAL
+    ambiente: AMBIENTE_ATUAL,
+    node_env: process.env.NODE_ENV,
+    puppeteer_info: {
+      chrome_bin: process.env.CHROME_BIN || 'não definido',
+      puppeteer_executable: process.env.PUPPETEER_EXECUTABLE_PATH || 'não definido'
+    },
+    dica: whatsappReady ? 
+      'WhatsApp funcionando normalmente' : 
+      'Para habilitar: defina WHATSAPP_ENABLED=true e CHROME_BIN (se necessário) no ambiente'
   });
 });
 
@@ -3661,7 +3726,9 @@ app.listen(PORT, () => {
     }
   });
 
-  // Inicializar WhatsApp após o servidor
-  inicializarWhatsApp();
+  // Inicializar WhatsApp após o servidor com delay
+  setTimeout(() => {
+    inicializarWhatsApp();
+  }, 2000); // Aguardar 2 segundos para estabilizar servidor
 });
 
