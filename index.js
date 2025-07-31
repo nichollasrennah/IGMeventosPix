@@ -9,6 +9,8 @@ const path = require("path");
 const axios = require("axios");
 const bodyParser = require("body-parser");
 const htmlPdf = require("html-pdf-node");
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
 require("dotenv").config();
 
 const app = express();
@@ -84,6 +86,69 @@ const CONFIG_AMBIENTES = {
 // Configuração ativa baseada no ambiente
 const CONFIG = CONFIG_AMBIENTES[AMBIENTE_ATUAL];
 
+// =====================================================
+// CONFIGURAÇÃO WHATSAPP
+// =====================================================
+
+let whatsappClient = null;
+let whatsappReady = false;
+
+// Inicializar cliente WhatsApp
+function inicializarWhatsApp() {
+  if (process.env.WHATSAPP_ENABLED === 'true') {
+    whatsappClient = new Client({
+      authStrategy: new LocalAuth({
+        name: "pix-sicredi-session"
+      }),
+      puppeteer: {
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      }
+    });
+
+    whatsappClient.on('qr', (qr) => {
+      console.log('📱 QR Code do WhatsApp:');
+      qrcode.generate(qr, { small: true });
+      console.log('Escaneie o QR code acima com seu WhatsApp para conectar');
+    });
+
+    whatsappClient.on('ready', () => {
+      console.log('✅ WhatsApp conectado com sucesso!');
+      whatsappReady = true;
+    });
+
+    whatsappClient.on('disconnected', (reason) => {
+      console.log('❌ WhatsApp desconectado:', reason);
+      whatsappReady = false;
+    });
+
+    whatsappClient.initialize();
+    console.log('🔄 Inicializando WhatsApp...');
+  } else {
+    console.log('📱 WhatsApp desabilitado (WHATSAPP_ENABLED != true)');
+  }
+}
+
+// Função para enviar mensagem WhatsApp
+async function enviarWhatsApp(numero, mensagem) {
+  if (!whatsappClient || !whatsappReady) {
+    throw new Error('WhatsApp não está conectado');
+  }
+
+  // Formatar número (remover caracteres especiais, adicionar código do país se necessário)
+  const numeroLimpo = numero.replace(/\D/g, '');
+  const numeroFormatado = numeroLimpo.startsWith('55') ? numeroLimpo : `55${numeroLimpo}`;
+  const chatId = `${numeroFormatado}@c.us`;
+
+  try {
+    await whatsappClient.sendMessage(chatId, mensagem);
+    return { sucesso: true, numero: numeroFormatado };
+  } catch (error) {
+    console.error('Erro ao enviar WhatsApp:', error);
+    throw error;
+  }
+}
+
 // Validar configurações obrigatórias
 function validarConfiguracao() {
   const erros = [];
@@ -133,6 +198,12 @@ SICREDI_HOMOLOG_TOKEN_URL=https://api-pix-h.sicredi.com.br/oauth/token
 # SICREDI_PROD_PIX_KEY=sua_chave_pix_producao@sicredi.com.br
 # SICREDI_PROD_API_URL=https://api-pix.sicredi.com.br/api/v2
 # SICREDI_PROD_TOKEN_URL=https://api-pix.sicredi.com.br/oauth/token
+
+# =====================================================
+# CONFIGURAÇÃO WHATSAPP
+# =====================================================
+# Habilitar integração WhatsApp (true/false)
+WHATSAPP_ENABLED=true
 
 # =====================================================
 # OUTRAS CONFIGURAÇÕES
@@ -3279,6 +3350,266 @@ app.get("/relatorio-cobrancas", async (req, res) => {
   }
 });
 
+// =====================================================
+// ENDPOINT - ENVIAR WHATSAPP
+// =====================================================
+
+app.post("/enviar-whatsapp", async (req, res) => {
+  try {
+    const { 
+      telefone, 
+      nome, 
+      valor, 
+      pixCopiaECola, 
+      data_vencimento, 
+      evento, 
+      categoria,
+      mensagem_personalizada 
+    } = req.body;
+
+    // Validações
+    if (!telefone) {
+      return res.status(400).json({
+        erro: "Número de telefone é obrigatório",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+
+    if (!whatsappReady) {
+      return res.status(503).json({
+        erro: "WhatsApp não está conectado",
+        ambiente: AMBIENTE_ATUAL,
+        dica: "Verifique se WHATSAPP_ENABLED=true no .env e se o QR code foi escaneado"
+      });
+    }
+
+    // Formatar valor monetário
+    const valorFormatado = valor ? 
+      parseFloat(valor).toLocaleString('pt-BR', { 
+        style: 'currency', 
+        currency: 'BRL' 
+      }) : 'Não informado';
+
+    // Formatar data de vencimento
+    const vencimentoFormatado = data_vencimento ? 
+      new Date(data_vencimento).toLocaleDateString('pt-BR') : null;
+
+    // Construir mensagem
+    let mensagem;
+    
+    if (mensagem_personalizada) {
+      mensagem = mensagem_personalizada;
+    } else {
+      mensagem = `🏦 *Pagamento PIX - Sicredi*\n\n`;
+      
+      if (nome) mensagem += `👤 *Pagador:* ${nome}\n`;
+      mensagem += `💰 *Valor:* ${valorFormatado}\n`;
+      
+      if (vencimentoFormatado) {
+        mensagem += `📅 *Vencimento:* ${vencimentoFormatado}\n`;
+      }
+      
+      if (evento) mensagem += `🎯 *Evento:* ${evento}\n`;
+      if (categoria) mensagem += `📋 *Categoria:* ${categoria}\n`;
+      
+      mensagem += `\n🔗 *PIX Copia e Cola:*\n\`\`\`${pixCopiaECola}\`\`\`\n\n`;
+      mensagem += `📱 _Copie o código acima e cole no seu app bancário para pagar._\n`;
+      mensagem += `⏰ _Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}_`;
+    }
+
+    // Enviar mensagem
+    const resultado = await enviarWhatsApp(telefone, mensagem);
+
+    res.json({
+      sucesso: true,
+      numero_formatado: resultado.numero,
+      mensagem_enviada: mensagem,
+      ambiente: AMBIENTE_ATUAL,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error("❌ Erro ao enviar WhatsApp:", error);
+    res.status(500).json({
+      erro: "Falha ao enviar WhatsApp",
+      detalhes: error.message,
+      ambiente: AMBIENTE_ATUAL
+    });
+  }
+});
+
+// Endpoint para verificar status do WhatsApp
+app.get("/whatsapp-status", (req, res) => {
+  res.json({
+    conectado: whatsappReady,
+    cliente_ativo: !!whatsappClient,
+    habilitado: process.env.WHATSAPP_ENABLED === 'true',
+    ambiente: AMBIENTE_ATUAL
+  });
+});
+
+// Endpoint integrado: Gerar PIX e enviar WhatsApp
+app.post("/gerar-pix-whatsapp", async (req, res) => {
+  try {
+    const { telefone, ...pixData } = req.body;
+
+    if (!telefone) {
+      return res.status(400).json({
+        erro: "Número de telefone é obrigatório para envio WhatsApp",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+
+    // Gerar PIX primeiro (reutilizar lógica do endpoint /gerar-pix)
+    const { nome, cpf, valor, chave_pix, descricao, evento, tag_evento, categoria } = pixData;
+    
+    console.log(`💰 Gerando PIX + WhatsApp no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
+    
+    const cpfLimpo = cpf?.replace(/\D/g, '') || '';
+    const valorNumerico = parseFloat(valor) || 0;
+    const chavePixFinal = chave_pix || CONFIG.pix_key;
+    
+    // Validações básicas
+    if (cpfLimpo.length !== 11) {
+      return res.status(400).json({
+        erro: "CPF deve conter exatamente 11 dígitos",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+    
+    if (valorNumerico <= 0) {
+      return res.status(400).json({
+        erro: "Valor deve ser maior que zero",
+        ambiente: AMBIENTE_ATUAL
+      });
+    }
+
+    // Preparar payload PIX
+    const infoAdicionais = [];
+    
+    if (evento || tag_evento) {
+      infoAdicionais.push({
+        nome: "evento",
+        valor: evento || tag_evento
+      });
+    }
+    
+    if (categoria) {
+      infoAdicionais.push({
+        nome: "categoria", 
+        valor: categoria
+      });
+    }
+    
+    infoAdicionais.push({
+      nome: "gerado_em",
+      valor: new Date().toISOString()
+    });
+    
+    infoAdicionais.push({
+      nome: "ambiente",
+      valor: AMBIENTE_ATUAL
+    });
+
+    const payload = {
+      calendario: { 
+        expiracao: 3600
+      },
+      devedor: { 
+        cpf: cpfLimpo,
+        nome: nome?.trim() || ''
+      },
+      valor: { 
+        original: valorNumerico.toFixed(2)
+      },
+      solicitacaoPagador: (descricao || "Pagamento via PIX").substring(0, 140),
+      infoAdicionais
+    };
+
+    if (chavePixFinal) {
+      payload.chave = chavePixFinal.trim();
+    }
+
+    // Obter token e criar PIX
+    const token = await obterToken();
+    
+    const response = await axios.post(
+      `${CONFIG.api_url}/cob`,
+      payload,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        httpsAgent: criarAgentHttps(),
+        timeout: CONFIG.timeout
+      }
+    );
+
+    const pixInfo = response.data;
+
+    // Enviar WhatsApp com as informações do PIX
+    if (whatsappReady) {
+      try {
+        const mensagemWhatsApp = `🏦 *Pagamento PIX - Sicredi*\n\n` +
+          `👤 *Pagador:* ${nome}\n` +
+          `💰 *Valor:* ${valorNumerico.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\n` +
+          (evento ? `🎯 *Evento:* ${evento}\n` : '') +
+          (categoria ? `📋 *Categoria:* ${categoria}\n` : '') +
+          `\n🔗 *PIX Copia e Cola:*\n\`\`\`${pixInfo.pixCopiaECola}\`\`\`\n\n` +
+          `📱 _Copie o código acima e cole no seu app bancário para pagar._\n` +
+          `⏰ _Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}_`;
+
+        await enviarWhatsApp(telefone, mensagemWhatsApp);
+        
+        res.json({
+          ...pixInfo,
+          whatsapp: {
+            enviado: true,
+            telefone: telefone,
+            timestamp: new Date().toISOString()
+          },
+          ambiente: AMBIENTE_ATUAL
+        });
+      } catch (whatsappError) {
+        // PIX foi criado, mas WhatsApp falhou
+        res.json({
+          ...pixInfo,
+          whatsapp: {
+            enviado: false,
+            erro: whatsappError.message,
+            telefone: telefone
+          },
+          ambiente: AMBIENTE_ATUAL,
+          aviso: "PIX criado com sucesso, mas falha no envio WhatsApp"
+        });
+      }
+    } else {
+      res.json({
+        ...pixInfo,
+        whatsapp: {
+          enviado: false,
+          erro: "WhatsApp não está conectado",
+          telefone: telefone
+        },
+        ambiente: AMBIENTE_ATUAL,
+        aviso: "PIX criado com sucesso, mas WhatsApp não está disponível"
+      });
+    }
+
+  } catch (error) {
+    console.error("❌ Erro no PIX + WhatsApp:", error);
+    const statusCode = error.response?.status || 500;
+    const responseError = {
+      erro: "Falha ao gerar PIX com WhatsApp",
+      detalhes: error.response?.data || error.message,
+      ambiente: AMBIENTE_ATUAL
+    };
+    
+    res.status(statusCode).json(responseError);
+  }
+});
+
 // Tratamento de erro global
 app.use((error, req, res, next) => {
   console.error("❌ Erro não tratado:", error);
@@ -3314,6 +3645,9 @@ app.listen(PORT, () => {
    • GET  /relatorio-cobrancas - Relatório completo (objeto estruturado)
    • GET  /test-auth - Testar autenticação
    • GET  /listar-chaves - Listar chaves PIX
+   • POST /enviar-whatsapp - Enviar informações de pagamento via WhatsApp
+   • GET  /whatsapp-status - Verificar status da conexão WhatsApp
+   • POST /gerar-pix-whatsapp - Gerar PIX e enviar WhatsApp automaticamente
   `);
   
   // Verifica se os certificados estão presentes
@@ -3326,5 +3660,8 @@ app.listen(PORT, () => {
       console.log(`❌ ${file} NÃO encontrado em ${filePath}`);
     }
   });
+
+  // Inicializar WhatsApp após o servidor
+  inicializarWhatsApp();
 });
 
