@@ -1,0 +1,1106 @@
+{
+	"info": {
+		"_postman_id": "0db88b06-1e85-4f0b-9dd3-01809e35b561",
+		"name": "Api Pix Sicredi",
+		"description": "# API PIX - Sicredi\n\nA API Pix padroniza serviços oferecidos pelo PSP recebedor no contexto do arranjo Pix, como criação de cobrança, verificação de Pix recebidos, devolução e conciliação. Os serviços expostos pelo PSP recebedor permitem ao usuário recebedor estabelecer integração de sua automação com os serviços PIX do PSP.\n\n# Variáveis\n\nPara executar as requisições dessa coleção, será necessário preencher o valor das variáveis com as suas informações para o teste. Segue uma sequência de imagens demonstrado como deve ser feita a configuração.\n\n<img src=\"https://content.pstmn.io/e87f2d65-4024-4bfa-bb67-80e4e8a7fb08/cG9zdG1hbl92YXIxLnBuZw==\" alt=\"1%20-%20Selecione%20a%20collection%20Api%20Pix%20Sicredi\">\n\n<img src=\"https://content.pstmn.io/816f9fb8-e632-4278-9e38-5af7c71570fb/cG9zdG1hbl92YXIyLnBuZw==\" alt=\"2%20-%20Alterne%20para%20a%20aba%20&quot;Variáveis/Variables&quot;\">\n\n<img src=\"https://content.pstmn.io/784e1c8d-919b-4b69-a379-1bba5ee58485/cG9zdG1hbl92YXIzLnBuZw==\" alt=\"3%20-%20%20Preencha%20os%20valores%20das%20variáveis%20de%20acordo%20com%20as%20suas%20informações%20-%20Em%20seguida%20clique%20em%20&quot;Salvar/Save&quot;\" width=\"910\" height=\"387\">\n\n# Autenticação mTLS\n\nPara realizar requisições na API PIX do Sicredi é necessário autenticação _**mTLS**_. Para realizar essa autenticação é necessário configurar o Postman, para que sejam utilizados o certificado e a chave privada, gerados no processo de credenciamento. Abaixo sege uma sequência de imagens demonstrando essa configuração que deve ser adicionada ao seu Postman:\n\n<img src=\"https://content.pstmn.io/bd70a673-4721-4a53-a0c2-e7dac7f7e036/NV9wb3N0bWFuX3NldHRpbmdzLnBuZw==\" alt=\"1%20-%20Navegue%20até%20as%20configurações%20(settings)\">\n\n<img src=\"https://content.pstmn.io/73d09093-4708-4e3a-900b-e5a1150f317a/NV9zZXR0aW5ncy5wbmc=\" alt=\"2%20-%20Navegue%20até%20o%20bloco%20demarcado%20para%20verificação%20SSL,%20habilite%20se%20necessário,%20e%20em%20seguida%20clique%20em%20&quot;Configurações/Settings&quot;\">\n\n<img src=\"https://content.pstmn.io/9291eb2c-5258-42a0-9f84-f44ec0398ec6/Nl9jZXJ0aWZpY2F0ZXMucG5n\" alt=\"3%20-%20Habilite%20a%20verificação%20SSL,%20em%20seguida%20navegue%20até%20a%20aba%20&quot;Certificados/Certificates&quot;\">\n\n<img src=\"https://content.pstmn.io/26b5de73-08a9-46a7-b777-5a94a5874549/N19hZGRfY2VydGlmaWNhdGUucG5n\" alt=\"4%20-%20Na%20aba%20&quot;Certificados/Certificates&quot;%20acione%20&quot;Adicionar%20Certicado/Add%20Certificate&quot;\" width=\"890\" height=\"658\">\n\n<img src=\"https://content.pstmn.io/800f7455-a75c-4c93-8c3b-53841daceebe/OF9hZGRfY2xpZW50X2NlcnRpZmljYXRlX2FuZF9rZXlfYW5kX2hvc3QucG5n\" alt=\"5%20-%20Preencha%20o%20formulário%20apontando%20para%20os%20arquivos%20-%20Lembrando%20que%20o%20certificado%20deve%20estar%20no%20formato%20.PEM%20e%20o%20recomendamos%20que%20o%20arquivo%20.KEY%20esteja%20sem%20senha\">\n\n<img src=\"https://content.pstmn.io/400f755b-28fb-48ef-b82c-d4af335a96f2/OV92YWxpZGF0ZV9zZXR0aW5ncy5wbmc=\" alt=\"6%20-%20Confira%20as%20informações%20configuradas,%20conforme%20a%20localização%20dos%20seus%20arquivos\">\n\n<img src=\"https://content.pstmn.io/6dbcfb6c-f4f3-4250-8c12-d74c90d4b9a5/MTBfYWNjZXNzX3Rva2VuLnBuZw==\" alt=\"7%20-%20Após%20as%20configurações,%20será%20possível%20realizar%20as%20requisições%20-%20Você%20pode%20validar%20a%20autenticação%20como%20demonstrado%20na%20imagem\">",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "30433849"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Gerar access token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const resp = pm.response.json();\r",
+									"pm.collectionVariables.set('token',resp.access_token);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "basic",
+							"basic": [
+								{
+									"key": "password",
+									"value": "{{clientSecret}}",
+									"type": "string"
+								},
+								{
+									"key": "username",
+									"value": "{{clientId}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrlToken}}/oauth/token?grant_type=client_credentials&scope={{scope}}",
+							"host": [
+								"{{baseUrlToken}}"
+							],
+							"path": [
+								"oauth",
+								"token"
+							],
+							"query": [
+								{
+									"key": "grant_type",
+									"value": "client_credentials"
+								},
+								{
+									"key": "scope",
+									"value": "{{scope}}"
+								}
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Cobrança",
+			"item": [
+				{
+					"name": "Criar cobrança",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.set(\"txid\", utils.makeid(26));\r",
+									"console.log(\"pm.collectionVariables.txid: \" + pm.collectionVariables.get(\"txid\"));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"calendario\": {\r\n    \"expiracao\": 86401\r\n  },\r\n  \"devedor\": {\r\n    \"cpf\": \"00012312312\",\r\n    \"nome\": \"Pagador dos Santos\"\r\n  },\r\n  \"valor\": {\r\n    \"original\": \"123.45\"\r\n  },\r\n  \"chave\": \"{{chavePix}}\",\r\n  \"solicitacaoPagador\": \"Informar como foi sua experiência na nossa loja\",\r\n  \"infoAdicionais\": [\r\n    {\r\n      \"nome\": \"Detalhes do Pagamento\",\r\n      \"valor\": \"Pagamendo do Churrasco\"\r\n    }\r\n  ]\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob",
+								"{{txid}}"
+							]
+						},
+						"description": "Cria uma Cobrança.\n\nEndpoint para criar uma cobrança imediata.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Criar cobrança de saque",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.set(\"txid\", utils.makeid(26));\r",
+									"console.log(\"pm.collectionVariables.txid: \" + pm.collectionVariables.get(\"txid\"));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"calendario\": {\r\n        \"expiracao\": 3600\r\n    },\r\n    \"devedor\": {\r\n        \"cnpj\": \"12345678000195\",\r\n        \"nome\": \"Empresa de Serviços SA\"\r\n    },\r\n    \"valor\": {\r\n        \"original\": \"0.00\",\r\n        \"modalidadeAlteracao\": 0,\r\n        \"retirada\": {\r\n            \"saque\": {\r\n                \"valor\": \"20.00\",\r\n                \"modalidadeAlteracao\": 1,\r\n                \"modalidadeAgente\": \"AGTEC\",\r\n                \"prestadorDoServicoDeSaque\": \"01181521\"\r\n            }\r\n        }\r\n    },\r\n    \"chave\": \"{{chavePix}}\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob",
+								"{{txid}}"
+							]
+						},
+						"description": "Cria uma Cobrança de saque.\n\nEndpoint para criar uma cobrança imediata.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Criar cobrança de troco",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.set(\"txid\", utils.makeid(26));\r",
+									"console.log(\"pm.collectionVariables.txid: \" + pm.collectionVariables.get(\"txid\"));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"calendario\": {\r\n        \"expiracao\": 3600\r\n    },\r\n    \"devedor\": {\r\n        \"cnpj\": \"12345678000195\",\r\n        \"nome\": \"Empresa de Serviços SA\"\r\n    },\r\n    \"valor\": {\r\n        \"original\": \"10.00\",\r\n        \"modalidadeAlteracao\": 0,\r\n        \"retirada\": {\r\n            \"troco\": {\r\n                \"valor\": \"10.00\",\r\n                \"modalidadeAlteracao\": 0,\r\n                \"modalidadeAgente\": \"AGTEC\",\r\n                \"prestadorDoServicoDeSaque\": \"01181521\"\r\n            }\r\n        }\r\n    },\r\n    \"chave\": \"{{chavePix}}\"\r\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob",
+								"{{txid}}"
+							]
+						},
+						"description": "Cria uma Cobrança de troco.\n\nEndpoint para criar uma cobrança imediata.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Buscar dados de cobrança",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v3/cob/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v3",
+								"cob",
+								"{{txid}}"
+							],
+							"query": [
+								{
+									"key": "revisao",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "**Recupera dados do Pagamento.**\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| revisao | queryParam |  | No | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Revisar cobrança",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"status\": \"REMOVIDA_PELO_USUARIO_RECEBEDOR\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob",
+								"{{txid}}"
+							]
+						},
+						"description": "Revisar uma cobrança.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Criar cobrança",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.set(\"txid\", utils.makeid(26));\r",
+									"console.log(\"pm.collectionVariables.txid: \" + pm.collectionVariables.get(\"txid\"));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"calendario\": {\r\n    \"expiracao\": 3600\r\n  },\r\n  \"devedor\": {\r\n    \"cnpj\": \"12345678000195\",\r\n    \"nome\": \"Empresa de Serviços SA\"\r\n  },\r\n  \"valor\": {\r\n    \"original\": \"37.00\",\r\n    \"modalidadeAlteracao\": 1\r\n  },\r\n  \"chave\": \"{{chavePix}}\",\r\n  \"solicitacaoPagador\": \"Serviço realizado.\",\r\n  \"infoAdicionais\": [\r\n    {\r\n      \"nome\": \"Campo 1\",\r\n      \"valor\": \"Informação Adicional1 do PSP-Recebedor\"\r\n    },\r\n    {\r\n      \"nome\": \"Campo 2\",\r\n      \"valor\": \"Informação Adicional2 do PSP-Recebedor\"\r\n    }\r\n  ]\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob"
+							]
+						},
+						"description": "Criar uma cobrança.\n\nEndpoint para criar uma cobrança imediata, neste caso, o txid deve ser definido pelo PSP."
+					},
+					"response": []
+				},
+				{
+					"name": "Criar cobrança de saque",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.set(\"txid\", utils.makeid(26));\r",
+									"console.log(\"pm.collectionVariables.txid: \" + pm.collectionVariables.get(\"txid\"));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"calendario\": {\r\n        \"expiracao\": 3600\r\n    },\r\n    \"devedor\": {\r\n        \"cnpj\": \"12345678000195\",\r\n        \"nome\": \"Empresa de Serviços SA\"\r\n    },\r\n    \"valor\": {\r\n        \"original\": \"0.00\",\r\n        \"modalidadeAlteracao\": 0,\r\n        \"retirada\": {\r\n            \"saque\": {\r\n                \"valor\": \"5.00\",\r\n                \"modalidadeAlteracao\": 0,\r\n                \"modalidadeAgente\": \"AGTEC\",\r\n                \"prestadorDoServicoDeSaque\": \"01181521\"\r\n            }\r\n        }\r\n    },\r\n    \"chave\": \"{{chavePix}}\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob"
+							]
+						},
+						"description": "Criar uma cobrança de saque\n\nEndpoint para criar uma cobrança imediata, neste caso, o txid deve ser definido pelo PSP."
+					},
+					"response": []
+				},
+				{
+					"name": "Criar cobrança de troco",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"pm.collectionVariables.set(\"txid\", utils.makeid(26));\r",
+									"console.log(\"pm.collectionVariables.txid: \" + pm.collectionVariables.get(\"txid\"));"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"calendario\": {\r\n        \"expiracao\": 3600\r\n    },\r\n    \"devedor\": {\r\n        \"cnpj\": \"12345678000195\",\r\n        \"nome\": \"Empresa de Serviços SA\"\r\n    },\r\n    \"valor\": {\r\n        \"original\": \"15.00\",\r\n        \"modalidadeAlteracao\": 0,\r\n        \"retirada\": {\r\n            \"troco\": {\r\n                \"valor\": \"5.00\",\r\n                \"modalidadeAlteracao\": 1,\r\n                \"modalidadeAgente\": \"AGTEC\",\r\n                \"prestadorDoServicoDeSaque\": \"01181521\"\r\n            }\r\n        }\r\n    },\r\n    \"chave\": \"{{chavePix}}\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob"
+							]
+						},
+						"description": "Criar uma cobrança de troco.\n\nEndpoint para criar uma cobrança imediata, neste caso, o txid deve ser definido pelo PSP."
+					},
+					"response": []
+				},
+				{
+					"name": "Consultar lista de cobranças imediatas",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cob?inicio={{dataInicio}}&fim={{dataFim}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cob"
+							],
+							"query": [
+								{
+									"key": "inicio",
+									"value": "{{dataInicio}}"
+								},
+								{
+									"key": "fim",
+									"value": "{{dataFim}}"
+								},
+								{
+									"key": "cpf",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "cnpj",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "locationPresente",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "paginacao.paginaAtual",
+									"value": "0",
+									"disabled": true
+								},
+								{
+									"key": "paginacao.itensPorPagina",
+									"value": "100",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Consultar lista de cobranças imediatas.\n\nEndpoint para consultar cobranças imediatas através de parâmetros como início, fim, cpf, cnpj e status.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| inicio | query | Data inicial do range da consulta, baseada na data de criação | Yes | string($date-time)('yyyy-MM-ddTHH:mm:ssZ') |\n| fim | query | Data final do range da consulta, baseada na data de criação | Yes | string($date-time)('yyyy-MM-ddTHH:mm:ssZ') |\n| cpf | query | cpf do devedor | No | string |\n| cnpj | query | cnpj do devedor | No | string |\n| locationPresente | query |  | No | boolean |\n| status | query |  | No | string |\n| paginacao.paginaAtual | query |  | No | integer($int32) |\n| paginacao.itensPorPagina | query |  | No | integer($int32) |"
+					},
+					"response": []
+				}
+			],
+			"description": "Reune endpoints destinados a lidar com o gerenciamento de cobranças."
+		},
+		{
+			"name": "Cobrança com Vencimento",
+			"item": [
+				{
+					"name": "Criar cobrança com vencimento",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"let id =  utils.makeid(26);\r",
+									"pm.collectionVariables.set(\"txid\",id);\r",
+									"console.log(\"pm.collectionVariables.txid: \" + pm.collectionVariables.get(\"txid\"));\r",
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"calendario\": {\r\n        \"dataDeVencimento\": \"2040-04-01\",\r\n        \"validadeAposVencimento\": 30\r\n    },\r\n    \"devedor\": {\r\n        \"nome\": \"Devedor da Silva\",\r\n        \"cpf\": \"00012312312\"\r\n    },\r\n    \"valor\": {\r\n        \"original\": \"123.45\",\r\n        \"multa\": {\r\n            \"modalidade\": \"2\",\r\n            \"valorPerc\": \"15.00\"\r\n        },\r\n        \"juros\": {\r\n            \"modalidade\": \"2\",\r\n            \"valorPerc\": \"2.00\"\r\n        },\r\n        \"desconto\": {\r\n            \"modalidade\": \"1\",\r\n            \"descontoDataFixa\": [\r\n                {\r\n                    \"data\": \"2040-03-01\",\r\n                    \"valorPerc\": \"30.00\"\r\n                }\r\n            ]\r\n        }\r\n    },\r\n    \"chave\": \"{{chavePix}}\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cobv/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cobv",
+								"{{txid}}"
+							]
+						},
+						"description": "Endpoint para criar uma cobrança com vencimento.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Consultar cobrança com vencimento",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cobv/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cobv",
+								"{{txid}}"
+							],
+							"query": [
+								{
+									"key": "revisao",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Endpoint para consultar uma cobrança com vencimento através de um determinado txid.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| revisao | queryParam |  | No | integer($int32) |"
+					},
+					"response": []
+				},
+				{
+					"name": "Revisar cobrança com vencimento - Revisa dados do devedor - Exemplo 1",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"devedor\": {\r\n        \"logradouro\": \"Alameda Souza, Numero 80, Bairro Braz\",\r\n        \"cidade\": \"Recife\",\r\n        \"uf\": \"PE\",\r\n        \"cep\": \"70011750\",\r\n        \"cpf\": \"12345678909\",\r\n        \"nome\": \"Francisco da Silva\",\r\n        \"email\": \"frandasilva@provedor.com.br\"\r\n    }\r\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cobv/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cobv",
+								"{{txid}}"
+							]
+						},
+						"description": "Endpoint para revisar informações da cobrança com vencimento.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Revisar cobrança com vencimento - Revisar valor - Exemplo 2",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"valor\": {\r\n        \"original\": \"567.89\"\r\n    }\r\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cobv/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cobv",
+								"{{txid}}"
+							]
+						},
+						"description": "Endpoint para revisar informações da cobrança com vencimento.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Revisar cobrança com vencimento - Remover Cobrança - Exemplo 3",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": \"REMOVIDA_PELO_USUARIO_RECEBEDOR\"\r\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cobv/{{txid}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cobv",
+								"{{txid}}"
+							]
+						},
+						"description": "Endpoint para revisar informações da cobrança com vencimento.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| txid | path |  | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Consultar lista de cobranças com vencimento",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/cobv?inicio={{dataInicio}}&fim={{dataFim}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"cobv"
+							],
+							"query": [
+								{
+									"key": "inicio",
+									"value": "{{dataInicio}}"
+								},
+								{
+									"key": "fim",
+									"value": "{{dataFim}}"
+								},
+								{
+									"key": "cpf",
+									"value": "",
+									"description": "CPF do devedor",
+									"disabled": true
+								},
+								{
+									"key": "cnpj",
+									"value": "",
+									"description": "CNPJ do devedor",
+									"disabled": true
+								},
+								{
+									"key": "locationPresente",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "status",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "loteCobVId",
+									"value": "",
+									"description": "ID do lote de cobranças com vencimento",
+									"disabled": true
+								},
+								{
+									"key": "paginacao.paginaAtual",
+									"value": "0",
+									"disabled": true
+								},
+								{
+									"key": "paginacao.itensPorPagina",
+									"value": "100",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Endpoint para consultar cobranças com vencimento através de parâmetros como início, fim, cpf, cnpj e status.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| inicio | query | Data inicial do range da consulta, baseada na data de criação | Yes | string($date-time)('yyyy-MM-ddTHH:mm:ssZ') |\n| fim | query | Data final do range da consulta, baseada na data de criação | Yes | string($date-time)('yyyy-MM-ddTHH:mm:ssZ') |\n| cpf | query | cpf do devedor | No | string |\n| cnpj | query | cnpj do devedor | No | string |\n| locationPresente | query |  | No | boolean |\n| status | query |  | No | string |\n| loteCobVId | query | ID do lote de cobranças com vencimento | No | integer($int32)  <br> |\n| paginacao.paginaAtual | query |  | No | integer($int32) |\n| paginacao.itensPorPagina | query |  | No | integer($int32) |"
+					},
+					"response": []
+				}
+			],
+			"description": "Reúne endpoints destinados a lidar com gerenciamento de cobranças com vencimento."
+		},
+		{
+			"name": "Webhook",
+			"item": [
+				{
+					"name": "Configurar o Webhook Pix",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"webhookUrl\": \"https://dominio.com.br/endpoint/pix\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/webhook/{{chavePix}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"webhook",
+								"{{chavePix}}"
+							]
+						},
+						"description": "Endpoint para configuração do serviço de notificações acerca de Pix recebidos. Somente PIX associados a um txid serão notificados.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| chave | path | Chave pix do recebedor | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Exibir informações acerca do Webook Pix",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/webhook/{{chavePix}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"webhook",
+								"{{chavePix}}"
+							]
+						},
+						"description": "Endpoint para recuperação de informações sobre o webhook pix.\n\nEndFragment\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| chave | path | Chave pix do recebedor | Yes | string |"
+					},
+					"response": []
+				},
+				{
+					"name": "Exibir informações acerca do Webook Pix",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/webhook?inicio={{dataInicio}}&fim={{dataFim}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"webhook"
+							],
+							"query": [
+								{
+									"key": "paginacao.paginaAtual",
+									"value": "0",
+									"disabled": true
+								},
+								{
+									"key": "paginacao.itensPorPagina",
+									"value": "100",
+									"disabled": true
+								},
+								{
+									"key": "inicio",
+									"value": "{{dataInicio}}"
+								},
+								{
+									"key": "fim",
+									"value": "{{dataFim}}"
+								}
+							]
+						},
+						"description": "Endpoint para recuperação de informações sobre o webhook pix.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| inicio | query | Data inicial do range da consulta, baseada na data de criação | Yes | string($date-time)('yyyy-MM-ddTHH:mm:ssZ') |\n| fim | query | Data final do range da consulta, baseada na data de criação | Yes | string($date-time)('yyyy-MM-ddTHH:mm:ssZ') |\n| paginacao.paginaAtual | query |  | No | integer($int32) |\n| paginacao.itensPorPagina | query |  | No | integer($int32) |"
+					},
+					"response": []
+				},
+				{
+					"name": "Cancelar o webhook Pix",
+					"event": [
+						{
+							"listen": "prerequest",
+							"script": {
+								"exec": [
+									"\r",
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v2/webhook/{{chavePix}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v2",
+								"webhook",
+								"{{chavePix}}"
+							]
+						},
+						"description": "Endpoint para cancelamento do webhook.\n\n##### Parâmetros\n\n| Name | Located in | Description | Required | Schema |\n| --- | --- | --- | --- | --- |\n| chave | path | Chave pix do recebedor | Yes | string |"
+					},
+					"response": []
+				}
+			],
+			"description": "Reune endpoints destinados a lidar com gerenciamento de notificações."
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"utils = {",
+					"  makeid: function(length) {",
+					"    var result           = '';",
+					"    var characters       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';",
+					"    var charactersLength = characters.length;",
+					"    for ( var i = 0; i < length; i++ ) {",
+					"        result += characters.charAt(Math.floor(Math.random() * charactersLength));",
+					"    }",
+					"    return result;",
+					"  },",
+					"  hojeInicio: function() {",
+					"      let today = new Date().toISOString().split('T')[0];",
+					"      return  today + 'T00:00:00Z';",
+					"  },",
+					"  hojeFim: function() {",
+					"      let today = new Date().toISOString().split('T')[0];",
+					"      return  today + 'T23:59:59Z';",
+					"  }",
+					"};",
+					"",
+					"pm.collectionVariables.set(\"dataInicio\",utils.hojeInicio());",
+					"pm.collectionVariables.set(\"dataFim\",utils.hojeFim());"
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://api-pix.sicredi.com.br",
+			"type": "default"
+		},
+		{
+			"key": "baseUrlToken",
+			"value": "https://api-pix.sicredi.com.br",
+			"type": "default"
+		},
+		{
+			"key": "scope",
+			"value": "cob.write+cob.read+webhook.read+webhook.write",
+			"type": "default"
+		},
+		{
+			"key": "chavePix",
+			"value": "",
+			"type": "default"
+		},
+		{
+			"key": "clientId",
+			"value": ""
+		},
+		{
+			"key": "clientSecret",
+			"value": "",
+			"type": "secret"
+		},
+		{
+			"key": "token",
+			"value": "não preencher",
+			"type": "secret"
+		},
+		{
+			"key": "txid",
+			"value": "não preencher",
+			"type": "default"
+		},
+		{
+			"key": "dataInicio",
+			"value": "não preencher",
+			"type": "default"
+		},
+		{
+			"key": "dataFim",
+			"value": "não preencher",
+			"type": "default"
+		}
+	]
+}
