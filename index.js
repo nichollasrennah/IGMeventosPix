@@ -627,6 +627,12 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
           font-size: 8px;
         }
         
+        .col-evento {
+          max-width: 100px;
+          font-size: 8px;
+          color: #0066cc;
+        }
+        
         @media print {
           .container {
             max-width: none;
@@ -698,6 +704,7 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
             <tr>
               <th class="col-txid">TXID</th>
               <th class="col-devedor">Devedor</th>
+              <th class="col-evento">Evento</th>
               <th class="col-valor">Valor</th>
               <th class="col-status">Status</th>
               <th class="col-pago">Pago</th>
@@ -708,7 +715,8 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
             ${dados.map(cob => `
               <tr>
                 <td class="col-txid">${(cob.txid || '').substring(0, 12)}...</td>
-                <td class="col-devedor">${(cob.devedor || '').substring(0, 25)}</td>
+                <td class="col-devedor">${(cob.devedor || '').substring(0, 20)}</td>
+                <td class="col-evento">${(cob.evento || '').substring(0, 15) || '-'}</td>
                 <td class="col-valor valor">R$ ${parseFloat(cob.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
                 <td class="col-status"><span class="status ${cob.status?.toLowerCase() || 'ativa'}">${cob.status || 'ATIVA'}</span></td>
                 <td class="col-pago ${cob.pago ? 'pago-sim' : 'pago-nao'}">${cob.pago ? 'SIM' : 'NÃO'}</td>
@@ -1055,7 +1063,7 @@ app.get("/test-auth", async (req, res) => {
 // Endpoint para gerar PIX (atualizado para usar configurações por ambiente)
 app.post("/gerar-pix", async (req, res) => {
   try {
-    const { nome, cpf, valor, chave_pix, descricao } = req.body;
+    const { nome, cpf, valor, chave_pix, descricao, evento, tag_evento, categoria } = req.body;
     
     console.log(`💰 Gerando PIX no ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
     
@@ -1101,7 +1109,40 @@ app.post("/gerar-pix", async (req, res) => {
     
     console.log(`💰 Gerando PIX para ${nome} - R$ ${valorNumerico.toFixed(2)} - Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
     
+    if (evento || tag_evento) {
+      console.log(`🎪 Evento: ${evento || tag_evento}${categoria ? ` | Categoria: ${categoria}` : ''}`);
+    }
+    
     const token = await obterToken();
+
+    // Preparar informações adicionais para identificação
+    const infoAdicionais = [];
+    
+    if (evento || tag_evento) {
+      infoAdicionais.push({
+        nome: "evento",
+        valor: evento || tag_evento
+      });
+    }
+    
+    if (categoria) {
+      infoAdicionais.push({
+        nome: "categoria",
+        valor: categoria
+      });
+    }
+    
+    // Adicionar timestamp para rastreabilidade
+    infoAdicionais.push({
+      nome: "gerado_em",
+      valor: new Date().toISOString()
+    });
+    
+    // Adicionar ambiente
+    infoAdicionais.push({
+      nome: "ambiente",
+      valor: AMBIENTE_ATUAL
+    });
 
     // Payload seguindo a especificação PIX
     const payload = {
@@ -1117,6 +1158,11 @@ app.post("/gerar-pix", async (req, res) => {
       },
       solicitacaoPagador: (descricao || "Pagamento via PIX").substring(0, 140)
     };
+    
+    // Adicionar informações adicionais se houver
+    if (infoAdicionais.length > 0) {
+      payload.infoAdicionais = infoAdicionais;
+    }
     
     if (chavePixFinal) {
       payload.chave = chavePixFinal.trim();
@@ -1181,7 +1227,12 @@ app.post("/gerar-pix", async (req, res) => {
       },
       chave_utilizada: chavePixFinal || 'nenhuma (homologação)',
       qrcode: cobranca.data.qrcode || null,
-      data_criacao: new Date().toISOString()
+      data_criacao: new Date().toISOString(),
+      evento_info: {
+        evento: evento || tag_evento || null,
+        categoria: categoria || null,
+        informacoes_adicionais: payload.infoAdicionais || []
+      }
     });
     
   } catch (error) {
@@ -1252,7 +1303,10 @@ app.post("/gerar-pix-vencimento", async (req, res) => {
       multa = {},
       juros = {},
       desconto = {},
-      txid_customizado
+      txid_customizado,
+      evento,
+      tag_evento,
+      categoria
     } = req.body;
     
     console.log(`💰 Gerando PIX com vencimento no ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
@@ -1321,11 +1375,44 @@ app.post("/gerar-pix-vencimento", async (req, res) => {
     
     console.log(`💰 Gerando PIX com vencimento para ${nome} - R$ ${valorNumerico.toFixed(2)} - Vence: ${data_vencimento} - Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}`);
     
+    if (evento || tag_evento) {
+      console.log(`🎪 Evento: ${evento || tag_evento}${categoria ? ` | Categoria: ${categoria}` : ''}`);
+    }
+    
     const token = await obterToken();
 
     // Gerar TXID se não fornecido (padrão PIX: 26-35 caracteres alfanuméricos)
     const txid = txid_customizado || generateTxid();
     console.log(`🆔 TXID gerado para CobV: ${txid} (${txid.length} caracteres)`);
+
+    // Preparar informações adicionais para identificação
+    const infoAdicionais = [];
+    
+    if (evento || tag_evento) {
+      infoAdicionais.push({
+        nome: "evento",
+        valor: evento || tag_evento
+      });
+    }
+    
+    if (categoria) {
+      infoAdicionais.push({
+        nome: "categoria",
+        valor: categoria
+      });
+    }
+    
+    // Adicionar timestamp para rastreabilidade
+    infoAdicionais.push({
+      nome: "gerado_em",
+      valor: new Date().toISOString()
+    });
+    
+    // Adicionar ambiente
+    infoAdicionais.push({
+      nome: "ambiente",
+      valor: AMBIENTE_ATUAL
+    });
 
     // Payload para cobrança com vencimento seguindo padrão PIX
     const payload = {
@@ -1342,6 +1429,11 @@ app.post("/gerar-pix-vencimento", async (req, res) => {
       },
       solicitacaoPagador: (descricao || "Pagamento PIX com vencimento").substring(0, 140)
     };
+    
+    // Adicionar informações adicionais se houver
+    if (infoAdicionais.length > 0) {
+      payload.infoAdicionais = infoAdicionais;
+    }
     
     // Adicionar chave PIX se fornecida
     if (chavePixFinal) {
@@ -1439,6 +1531,11 @@ app.post("/gerar-pix-vencimento", async (req, res) => {
       chave_utilizada: chavePixFinal || 'nenhuma (homologação)',
       qrcode: cobranca.data.qrcode || null,
       data_criacao: new Date().toISOString(),
+      evento_info: {
+        evento: evento || tag_evento || null,
+        categoria: categoria || null,
+        informacoes_adicionais: payload.infoAdicionais || []
+      },
       observacoes: {
         pagamento_ate_vencimento: `Valor original: R$ ${payload.valor.original}`,
         pagamento_apos_vencimento: payload.valor.multa || payload.valor.juros ? 
@@ -1506,7 +1603,7 @@ app.post("/gerar-pix-vencimento", async (req, res) => {
 // Endpoint para debug do payload no ambiente atual
 app.post("/debug-payload", (req, res) => {
   try {
-    const { nome, cpf, valor, chave_pix, descricao } = req.body;
+    const { nome, cpf, valor, chave_pix, descricao, evento, tag_evento, categoria } = req.body;
     
     console.log(`🐛 Debug payload no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
     
@@ -1514,6 +1611,33 @@ app.post("/debug-payload", (req, res) => {
     const cpfLimpo = cpf?.replace(/\D/g, '') || '';
     const valorNumerico = parseFloat(valor) || 0;
     const chavePixFinal = chave_pix || CONFIG.pix_key;
+    
+    // Preparar informações adicionais para exemplo
+    const infoAdicionais = [];
+    
+    if (evento || tag_evento) {
+      infoAdicionais.push({
+        nome: "evento",
+        valor: evento || tag_evento
+      });
+    }
+    
+    if (categoria) {
+      infoAdicionais.push({
+        nome: "categoria", 
+        valor: categoria
+      });
+    }
+    
+    infoAdicionais.push({
+      nome: "gerado_em",
+      valor: new Date().toISOString()
+    });
+    
+    infoAdicionais.push({
+      nome: "ambiente",
+      valor: AMBIENTE_ATUAL
+    });
     
     const payload = {
       calendario: { 
@@ -1529,6 +1653,11 @@ app.post("/debug-payload", (req, res) => {
       solicitacaoPagador: (descricao || "Pagamento via PIX").substring(0, 140)
     };
     
+    // Adicionar informações adicionais se houver
+    if (infoAdicionais.length > 0) {
+      payload.infoAdicionais = infoAdicionais;
+    }
+    
     if (chavePixFinal) {
       payload.chave = chavePixFinal.trim();
     }
@@ -1539,7 +1668,10 @@ app.post("/debug-payload", (req, res) => {
       valor_valido: valorNumerico > 0,
       nome_valido: nome && nome.trim().length > 0,
       chave_presente: !!chavePixFinal,
-      chave_obrigatoria_prod: isProducao ? !!chavePixFinal : true
+      chave_obrigatoria_prod: isProducao ? !!chavePixFinal : true,
+      evento_valido: !evento || (evento.trim().length > 0 && evento.trim().length <= 50),
+      tag_evento_valida: !tag_evento || (tag_evento.trim().length > 0 && tag_evento.trim().length <= 50),
+      categoria_valida: !categoria || (categoria.trim().length > 0 && categoria.trim().length <= 30)
     };
     
     res.json({
@@ -1559,7 +1691,20 @@ app.post("/debug-payload", (req, res) => {
         pix_key_ok: !!CONFIG.pix_key,
         ssl_verify: CONFIG.ssl_verify,
         timeout: CONFIG.timeout
-      }
+      },
+      evento_info: {
+        evento: evento || tag_evento || null,
+        categoria: categoria || null,
+        informacoes_adicionais_exemplo: infoAdicionais
+      },
+      dicas: [
+        "PIX imediato expira em 1 hora (3600 segundos)",
+        "CPF deve ter 11 dígitos (apenas números)",
+        "Valor deve ser maior que 0",
+        "Chave PIX é obrigatória em produção",
+        "Campo 'evento' ou 'tag_evento' para identificar o evento (máx 50 chars)",
+        "Campo 'categoria' para categorizar o pagamento (máx 30 chars)"
+      ]
     });
     
   } catch (error) {
@@ -1584,7 +1729,10 @@ app.post("/debug-payload-vencimento", (req, res) => {
       multa = {},
       juros = {},
       desconto = {},
-      txid_customizado
+      txid_customizado,
+      evento,
+      tag_evento,
+      categoria
     } = req.body;
     
     console.log(`🐛 Debug payload vencimento no ambiente ${AMBIENTE_ATUAL.toUpperCase()}`);
@@ -1600,6 +1748,33 @@ app.post("/debug-payload-vencimento", (req, res) => {
     // Gerar TXID de exemplo
     const txid = txid_customizado || generateTxid();
     
+    // Preparar informações adicionais para exemplo
+    const infoAdicionais = [];
+    
+    if (evento || tag_evento) {
+      infoAdicionais.push({
+        nome: "evento",
+        valor: evento || tag_evento
+      });
+    }
+    
+    if (categoria) {
+      infoAdicionais.push({
+        nome: "categoria", 
+        valor: categoria
+      });
+    }
+    
+    infoAdicionais.push({
+      nome: "gerado_em",
+      valor: new Date().toISOString()
+    });
+    
+    infoAdicionais.push({
+      nome: "ambiente",
+      valor: AMBIENTE_ATUAL
+    });
+    
     const payload = {
       calendario: { 
         dataDeVencimento: dataVencimento ? dataVencimento.toISOString().split('T')[0] : null,
@@ -1614,6 +1789,11 @@ app.post("/debug-payload-vencimento", (req, res) => {
       },
       solicitacaoPagador: (descricao || "Pagamento PIX com vencimento").substring(0, 140)
     };
+    
+    // Adicionar informações adicionais se houver
+    if (infoAdicionais.length > 0) {
+      payload.infoAdicionais = infoAdicionais;
+    }
     
     if (chavePixFinal) {
       payload.chave = chavePixFinal.trim();
@@ -1651,7 +1831,10 @@ app.post("/debug-payload-vencimento", (req, res) => {
       chave_obrigatoria_prod: isProducao ? !!chavePixFinal : true,
       multa_configurada_corretamente: !multa?.modalidade || (multa.modalidade && multa.valorPerc),
       juros_configurados_corretamente: !juros?.modalidade || (juros.modalidade && juros.valorPerc),
-      desconto_configurado_corretamente: !desconto?.descontos || Array.isArray(desconto.descontos)
+      desconto_configurado_corretamente: !desconto?.descontos || Array.isArray(desconto.descontos),
+      evento_valido: !evento || (evento.trim().length > 0 && evento.trim().length <= 50),
+      tag_evento_valida: !tag_evento || (tag_evento.trim().length > 0 && tag_evento.trim().length <= 50),
+      categoria_valida: !categoria || (categoria.trim().length > 0 && categoria.trim().length <= 30)
     };
     
     // Cálculos de exemplo para valores após vencimento
@@ -1698,12 +1881,19 @@ app.post("/debug-payload-vencimento", (req, res) => {
         valor_apos_vencimento_exemplo: `R$ ${exemploValorVencido.toFixed(2)} (após ${diasExemplo} dias)`,
         data_vencimento_formatada: dataVencimento?.toISOString().split('T')[0] || 'NÃO INFORMADA'
       },
+      evento_info: {
+        evento: evento || tag_evento || null,
+        categoria: categoria || null,
+        informacoes_adicionais_exemplo: infoAdicionais
+      },
       dicas: [
         "Use formato YYYY-MM-DD para data_vencimento",
         "Multa modalidade: 1=Valor fixo, 2=Percentual",
         "Juros modalidade: 1=Valor fixo por dia, 2=Percentual por dia",
         "Descontos devem ter array 'descontos' com objetos {data, modalidade, valorPerc}",
-        "TXID será gerado automaticamente se não fornecido"
+        "TXID será gerado automaticamente se não fornecido",
+        "Campo 'evento' ou 'tag_evento' para identificar o evento (máx 50 chars)",
+        "Campo 'categoria' para categorizar o pagamento (máx 30 chars)"
       ]
     });
     
@@ -2777,7 +2967,9 @@ app.get("/relatorio-pdf", async (req, res) => {
     const { 
       data_inicio, 
       data_fim, 
-      nome_arquivo
+      nome_arquivo,
+      evento,
+      categoria
     } = req.query;
     
     const token = await obterToken();
@@ -2820,15 +3012,38 @@ app.get("/relatorio-pdf", async (req, res) => {
     };
     
     // Formatar dados para o template
-    const dadosFormatados = dados.map(cob => ({
-      txid: cob.txid,
-      valor: cob.valor?.original,
-      devedor: cob.devedor?.nome,
-      status: cob.status,
-      data_criacao: cob.calendario?.criacao,
-      pago: cob.pix?.length > 0,
-      data_pagamento: cob.pix?.[0]?.horario
-    }));
+    let dadosFormatados = dados.map(cob => {
+      // Extrair informações de evento das informações adicionais
+      const infoEvento = cob.infoAdicionais?.find(info => info.nome === 'evento');
+      const infoCategoria = cob.infoAdicionais?.find(info => info.nome === 'categoria');
+      
+      return {
+        txid: cob.txid,
+        valor: cob.valor?.original,
+        devedor: cob.devedor?.nome,
+        status: cob.status,
+        data_criacao: cob.calendario?.criacao,
+        pago: cob.pix?.length > 0,
+        data_pagamento: cob.pix?.[0]?.horario,
+        evento: infoEvento?.valor || null,
+        categoria: infoCategoria?.valor || null
+      };
+    });
+    
+    // Aplicar filtros por evento/categoria se informados
+    if (evento) {
+      dadosFormatados = dadosFormatados.filter(cob => 
+        cob.evento && cob.evento.toLowerCase().includes(evento.toLowerCase())
+      );
+      console.log(`🔍 Filtro por evento "${evento}": ${dadosFormatados.length} cobranças encontradas`);
+    }
+    
+    if (categoria) {
+      dadosFormatados = dadosFormatados.filter(cob => 
+        cob.categoria && cob.categoria.toLowerCase().includes(categoria.toLowerCase())
+      );
+      console.log(`🔍 Filtro por categoria "${categoria}": ${dadosFormatados.length} cobranças encontradas`);
+    }
     
     // Gerar HTML
     const html = gerarTemplateRelatorioPDF(dadosFormatados, stats, {
@@ -2838,8 +3053,12 @@ app.get("/relatorio-pdf", async (req, res) => {
     
     // Gerar nome do arquivo
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+    let sufixoFiltro = '';
+    if (evento) sufixoFiltro += `-evento-${evento.replace(/[^a-zA-Z0-9]/g, '')}`;
+    if (categoria) sufixoFiltro += `-cat-${categoria.replace(/[^a-zA-Z0-9]/g, '')}`;
+    
     const nomeArquivo = nome_arquivo || 
-      `relatorio-cobrancas-${AMBIENTE_ATUAL}-${timestamp}-${Date.now()}.pdf`;
+      `relatorio-cobrancas-${AMBIENTE_ATUAL}-${timestamp}${sufixoFiltro}-${Date.now()}.pdf`;
     
     const caminhoArquivo = path.join(PDF_PATH, nomeArquivo);
     
@@ -2890,6 +3109,11 @@ app.get("/relatorio-pdf", async (req, res) => {
       },
       estatisticas: stats,
       total_cobrancas: dados.length,
+      total_filtradas: dadosFormatados.length,
+      filtros_aplicados: {
+        evento: evento || null,
+        categoria: categoria || null
+      },
       ambiente: {
         nome: AMBIENTE_ATUAL,
         producao: isProducao,
