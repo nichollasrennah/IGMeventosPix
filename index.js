@@ -3407,7 +3407,109 @@ app.get("/relatorio-cobrancas", async (req, res) => {
 });
 
 // =====================================================
-// ENDPOINT - ENVIAR WHATSAPP
+// ENDPOINT - WHATSAPP PARA APPSHEET (OTIMIZADO)
+// =====================================================
+
+app.post("/appsheet-whatsapp", async (req, res) => {
+  try {
+    // Responder imediatamente para evitar timeout do AppSheet
+    res.status(200).json({
+      status: "recebido",
+      timestamp: new Date().toISOString(),
+      message: "Requisição processada com sucesso"
+    });
+
+    // Processar WhatsApp de forma assíncrona
+    setImmediate(async () => {
+      try {
+        const { 
+          telefone, 
+          nome, 
+          valor, 
+          pixCopiaECola, 
+          data_vencimento, 
+          evento, 
+          categoria,
+          mensagem_personalizada 
+        } = req.body;
+
+        console.log(`📱 AppSheet WhatsApp request para ${telefone}`);
+
+        // Validações básicas
+        if (!telefone) {
+          console.error('❌ AppSheet WhatsApp: Telefone não fornecido');
+          return;
+        }
+
+        if (!whatsappReady) {
+          console.log('⚠️ AppSheet WhatsApp: WhatsApp não conectado, ignorando requisição');
+          return;
+        }
+
+        // Processar valor (remover formatação brasileira)
+        let valorProcessado = valor;
+        if (typeof valor === 'string') {
+          valorProcessado = valor.replace(',', '.');
+        }
+        const valorNumerico = parseFloat(valorProcessado) || 0;
+
+        // Formatar valor monetário
+        const valorFormatado = valorNumerico > 0 ? 
+          valorNumerico.toLocaleString('pt-BR', { 
+            style: 'currency', 
+            currency: 'BRL' 
+          }) : 'Não informado';
+
+        // Formatar data de vencimento
+        const vencimentoFormatado = data_vencimento ? 
+          new Date(data_vencimento).toLocaleDateString('pt-BR') : null;
+
+        // Construir mensagem
+        let mensagem;
+        
+        if (mensagem_personalizada) {
+          mensagem = mensagem_personalizada;
+        } else {
+          mensagem = `🏦 *Pagamento PIX - Sicredi*\n\n`;
+          
+          if (nome) mensagem += `👤 *Pagador:* ${nome}\n`;
+          mensagem += `💰 *Valor:* ${valorFormatado}\n`;
+          
+          if (vencimentoFormatado) {
+            mensagem += `📅 *Vencimento:* ${vencimentoFormatado}\n`;
+          }
+          
+          if (evento) mensagem += `🎯 *Evento:* ${evento}\n`;
+          if (categoria) mensagem += `📋 *Categoria:* ${categoria}\n`;
+          
+          if (pixCopiaECola) {
+            mensagem += `\n🔗 *PIX Copia e Cola:*\n\`\`\`${pixCopiaECola}\`\`\`\n\n`;
+            mensagem += `📱 _Copie o código acima e cole no seu app bancário para pagar._\n`;
+          }
+          mensagem += `⏰ _Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}_`;
+        }
+
+        // Enviar WhatsApp
+        const resultado = await enviarWhatsApp(telefone, mensagem);
+        console.log(`✅ AppSheet WhatsApp enviado para ${resultado.numero}`);
+
+      } catch (error) {
+        console.error("❌ Erro no processamento assíncrono AppSheet WhatsApp:", error.message);
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Erro no endpoint AppSheet WhatsApp:", error);
+    res.status(500).json({
+      status: "erro",
+      message: "Erro interno do servidor",
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// =====================================================
+// ENDPOINT - ENVIAR WHATSAPP (ORIGINAL)
 // =====================================================
 
 app.post("/enviar-whatsapp", async (req, res) => {
@@ -3929,6 +4031,7 @@ app.listen(PORT, () => {
    • GET  /test-auth - Testar autenticação
    • GET  /listar-chaves - Listar chaves PIX
    • POST /enviar-whatsapp - Enviar informações de pagamento via WhatsApp
+   • POST /appsheet-whatsapp - WhatsApp otimizado para AppSheet (resposta rápida)
    • GET  /whatsapp-status - Verificar status da conexão WhatsApp
    • GET  /whatsapp-qr - Página web para escanear QR Code do WhatsApp
    • GET  /whatsapp-qr-image - QR Code como imagem PNG
