@@ -434,13 +434,13 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
         
         .header h1 {
           color: #00a651;
-          font-size: 28px;
-          margin-bottom: 10px;
+          font-size: 22px;
+          margin-bottom: 8px;
         }
         
         .header .subtitle {
           color: #666;
-          font-size: 16px;
+          font-size: 14px;
         }
         
         .info-grid {
@@ -498,13 +498,13 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
         }
         
         .stat-item .number {
-          font-size: 24px;
+          font-size: 18px;
           font-weight: bold;
           display: block;
         }
         
         .stat-item .label {
-          font-size: 12px;
+          font-size: 10px;
           opacity: 0.9;
         }
         
@@ -519,18 +519,22 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
         }
         
         th, td {
-          padding: 12px;
+          padding: 6px 8px;
           text-align: left;
           border-bottom: 1px solid #e9ecef;
+          font-size: 10px;
+          word-wrap: break-word;
+          max-width: 120px;
         }
         
         th {
           background: #00a651;
           color: white;
           font-weight: bold;
-          font-size: 14px;
+          font-size: 10px;
           text-transform: uppercase;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.3px;
+          padding: 8px 6px;
         }
         
         tr:nth-child(even) {
@@ -575,17 +579,52 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
         }
         
         .footer {
-          margin-top: 30px;
+          margin-top: 20px;
           text-align: center;
           color: #666;
-          font-size: 12px;
+          font-size: 10px;
           border-top: 1px solid #e9ecef;
-          padding-top: 20px;
+          padding-top: 15px;
         }
         
         .valor {
           font-family: 'Courier New', monospace;
           font-weight: bold;
+          font-size: 9px;
+          text-align: right;
+        }
+        
+        .col-txid {
+          max-width: 80px;
+          font-size: 8px;
+          font-family: 'Courier New', monospace;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        
+        .col-devedor {
+          max-width: 150px;
+          font-size: 9px;
+        }
+        
+        .col-valor {
+          max-width: 70px;
+          text-align: right;
+        }
+        
+        .col-status {
+          max-width: 60px;
+          text-align: center;
+        }
+        
+        .col-pago {
+          max-width: 40px;
+          text-align: center;
+        }
+        
+        .col-data {
+          max-width: 80px;
+          font-size: 8px;
         }
         
         @media print {
@@ -657,23 +696,23 @@ function gerarTemplateRelatorioPDF(dados, estatisticas, periodo) {
         <table>
           <thead>
             <tr>
-              <th>TXID</th>
-              <th>Devedor</th>
-              <th>Valor</th>
-              <th>Status</th>
-              <th>Pago</th>
-              <th>Data Criação</th>
+              <th class="col-txid">TXID</th>
+              <th class="col-devedor">Devedor</th>
+              <th class="col-valor">Valor</th>
+              <th class="col-status">Status</th>
+              <th class="col-pago">Pago</th>
+              <th class="col-data">Data</th>
             </tr>
           </thead>
           <tbody>
             ${dados.map(cob => `
               <tr>
-                <td><small>${cob.txid}</small></td>
-                <td>${cob.devedor}</td>
-                <td class="valor">R$ ${parseFloat(cob.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
-                <td><span class="status ${cob.status?.toLowerCase() || 'ativa'}">${cob.status || 'ATIVA'}</span></td>
-                <td class="${cob.pago ? 'pago-sim' : 'pago-nao'}">${cob.pago ? 'SIM' : 'NÃO'}</td>
-                <td><small>${cob.data_criacao ? new Date(cob.data_criacao).toLocaleDateString('pt-BR') : 'N/A'}</small></td>
+                <td class="col-txid">${(cob.txid || '').substring(0, 12)}...</td>
+                <td class="col-devedor">${(cob.devedor || '').substring(0, 25)}</td>
+                <td class="col-valor valor">R$ ${parseFloat(cob.valor || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2})}</td>
+                <td class="col-status"><span class="status ${cob.status?.toLowerCase() || 'ativa'}">${cob.status || 'ATIVA'}</span></td>
+                <td class="col-pago ${cob.pago ? 'pago-sim' : 'pago-nao'}">${cob.pago ? 'SIM' : 'NÃO'}</td>
+                <td class="col-data">${cob.data_criacao ? new Date(cob.data_criacao).toLocaleDateString('pt-BR') : 'N/A'}</td>
               </tr>
             `).join('')}
           </tbody>
