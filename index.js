@@ -92,6 +92,7 @@ const CONFIG = CONFIG_AMBIENTES[AMBIENTE_ATUAL];
 
 let whatsappClient = null;
 let whatsappReady = false;
+let currentQRCode = null;
 
 // Inicializar cliente WhatsApp
 function inicializarWhatsApp() {
@@ -142,16 +143,20 @@ function inicializarWhatsApp() {
 
       whatsappClient.on('qr', (qr) => {
         console.log('📱 QR Code do WhatsApp:');
+        currentQRCode = qr; // Armazenar QR code atual
+        
         if (process.env.NODE_ENV !== 'production') {
           qrcode.generate(qr, { small: true });
         }
         console.log('Escaneie o QR code acima com seu WhatsApp para conectar');
         console.log('QR Code Data:', qr); // Para logs de produção
+        console.log('🌐 Acesse: /whatsapp-qr para ver o QR code no navegador');
       });
 
       whatsappClient.on('ready', () => {
         console.log('✅ WhatsApp conectado com sucesso!');
         whatsappReady = true;
+        currentQRCode = null; // Limpar QR code após conexão
       });
 
       whatsappClient.on('disconnected', (reason) => {
@@ -3501,6 +3506,7 @@ app.get("/whatsapp-status", (req, res) => {
     conectado: whatsappReady,
     cliente_ativo: !!whatsappClient,
     habilitado: process.env.WHATSAPP_ENABLED === 'true',
+    qr_code_disponivel: !!currentQRCode,
     ambiente: AMBIENTE_ATUAL,
     node_env: process.env.NODE_ENV,
     puppeteer_info: {
@@ -3509,8 +3515,153 @@ app.get("/whatsapp-status", (req, res) => {
     },
     dica: whatsappReady ? 
       'WhatsApp funcionando normalmente' : 
-      'Para habilitar: defina WHATSAPP_ENABLED=true e CHROME_BIN (se necessário) no ambiente'
+      currentQRCode ? 
+        'QR Code disponível em /whatsapp-qr - escaneie para conectar' :
+        'Para habilitar: defina WHATSAPP_ENABLED=true e CHROME_BIN (se necessário) no ambiente'
   });
+});
+
+// Endpoint para visualizar QR Code do WhatsApp
+app.get("/whatsapp-qr", (req, res) => {
+  if (!currentQRCode) {
+    return res.status(404).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>WhatsApp QR Code</title>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+          .status { padding: 20px; border-radius: 10px; margin: 20px 0; }
+          .error { background-color: #fee; color: #c33; border: 1px solid #fcc; }
+          .info { background-color: #eef; color: #339; border: 1px solid #ccf; }
+        </style>
+      </head>
+      <body>
+        <h1>📱 WhatsApp QR Code</h1>
+        <div class="status error">
+          <h2>QR Code não disponível</h2>
+          <p>Possíveis motivos:</p>
+          <ul style="text-align: left; max-width: 400px; margin: 0 auto;">
+            <li>WhatsApp já está conectado ✅</li>
+            <li>WhatsApp está desabilitado (WHATSAPP_ENABLED=false)</li>
+            <li>WhatsApp ainda está inicializando 🔄</li>
+            <li>Erro na inicialização do WhatsApp ❌</li>
+          </ul>
+        </div>
+        <div class="status info">
+          <p><strong>Verificar status:</strong> <a href="/whatsapp-status">GET /whatsapp-status</a></p>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  // Página HTML com QR Code
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>WhatsApp QR Code</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        body { 
+          font-family: Arial, sans-serif; 
+          text-align: center; 
+          padding: 20px;
+          background-color: #f5f5f5;
+        }
+        .container {
+          max-width: 500px;
+          margin: 0 auto;
+          background: white;
+          padding: 30px;
+          border-radius: 15px;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .qr-code {
+          margin: 20px 0;
+          padding: 20px;
+          background: white;
+          border-radius: 10px;
+          display: inline-block;
+        }
+        .instructions {
+          background-color: #e8f4fd;
+          border: 1px solid #bee5eb;
+          border-radius: 10px;
+          padding: 15px;
+          margin: 20px 0;
+        }
+        .refresh-btn {
+          background-color: #25d366;
+          color: white;
+          padding: 10px 20px;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
+          font-size: 16px;
+          margin: 10px;
+        }
+        .refresh-btn:hover {
+          background-color: #1db954;
+        }
+      </style>
+      <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    </head>
+    <body>
+      <div class="container">
+        <h1>📱 Conectar WhatsApp</h1>
+        <p>Escaneie o QR Code abaixo com seu WhatsApp</p>
+        
+        <div class="qr-code">
+          <canvas id="qrcode"></canvas>
+        </div>
+        
+        <div class="instructions">
+          <h3>📋 Como conectar:</h3>
+          <ol style="text-align: left;">
+            <li>Abra o <strong>WhatsApp</strong> no seu celular</li>
+            <li>Toque em <strong>Menu</strong> (⋮) → <strong>Dispositivos conectados</strong></li>
+            <li>Toque em <strong>Conectar um dispositivo</strong></li>
+            <li>Escaneie o QR Code acima</li>
+          </ol>
+        </div>
+        
+        <button class="refresh-btn" onclick="location.reload()">🔄 Atualizar QR Code</button>
+        <button class="refresh-btn" onclick="window.open('/whatsapp-status', '_blank')">📊 Ver Status</button>
+        
+        <p><small>Ambiente: ${AMBIENTE_ATUAL.toUpperCase()}</small></p>
+      </div>
+
+      <script>
+        // Gerar QR Code
+        const qrData = ${JSON.stringify(currentQRCode)};
+        const canvas = document.getElementById('qrcode');
+        
+        QRCode.toCanvas(canvas, qrData, {
+          width: 300,
+          margin: 2,
+          color: {
+            dark: '#000000',
+            light: '#FFFFFF'
+          }
+        }, function (error) {
+          if (error) {
+            console.error('Erro ao gerar QR Code:', error);
+            canvas.parentElement.innerHTML = '<p style="color: red;">Erro ao gerar QR Code</p>';
+          }
+        });
+
+        // Auto-refresh a cada 30 segundos
+        setTimeout(() => {
+          location.reload();
+        }, 30000);
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 // Endpoint integrado: Gerar PIX e enviar WhatsApp
@@ -3712,6 +3863,7 @@ app.listen(PORT, () => {
    • GET  /listar-chaves - Listar chaves PIX
    • POST /enviar-whatsapp - Enviar informações de pagamento via WhatsApp
    • GET  /whatsapp-status - Verificar status da conexão WhatsApp
+   • GET  /whatsapp-qr - Visualizar QR Code do WhatsApp no navegador
    • POST /gerar-pix-whatsapp - Gerar PIX e enviar WhatsApp automaticamente
   `);
   
