@@ -29,6 +29,7 @@ RUN mkdir -p certs pdfs
 # Definir variáveis de ambiente
 ENV NODE_ENV=production
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+ENV NODE_OPTIONS="--expose-gc --max-old-space-size=450"
 
 # Expor porta
 EXPOSE 3000

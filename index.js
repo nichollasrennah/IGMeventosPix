@@ -125,7 +125,17 @@ function inicializarWhatsApp() {
           '--no-first-run',
           '--no-zygote',
           '--single-process', // Para ambientes com pouca memória
-          '--disable-gpu'
+          '--disable-gpu',
+          '--memory-pressure-off',
+          '--max_old_space_size=350',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-features=TranslateUI',
+          '--disable-extensions',
+          '--disable-default-apps',
+          '--disable-sync',
+          '--disable-background-networking'
         ]
       };
 
@@ -366,8 +376,23 @@ function iniciarAutoPing() {
       const memoryUsage = process.memoryUsage();
       const memoryMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
       
-      if (memoryMB > 500) {
-        console.log(`⚠️ Uso de memória alto: ${memoryMB}MB`);
+      console.log(`📊 Memória atual: ${memoryMB}MB (heap: ${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB)`);
+      
+      if (memoryMB > 200) {
+        console.log(`⚠️ Uso de memória alto: ${memoryMB}MB - Forçando garbage collection`);
+        
+        // Forçar garbage collection se disponível
+        if (global.gc) {
+          global.gc();
+          const newMemory = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+          console.log(`♻️ Após GC: ${newMemory}MB (liberou ${memoryMB - newMemory}MB)`);
+        }
+        
+        // Limpar cache de sessões WhatsApp antigas se necessário
+        limparCacheMemoria();
+        
+        // Limpar PDFs antigos (mais de 1 hora)
+        limparPDFsAntigos();
       }
       
       // Se WhatsApp estiver habilitado mas não conectado, tentar reconectar
@@ -379,9 +404,9 @@ function iniciarAutoPing() {
     } catch (error) {
       console.log('⚠️ Erro no auto-ping:', error.message);
     }
-  }, 10 * 60 * 1000); // 10 minutos
+  }, 15 * 60 * 1000); // 15 minutos (reduzido de 10 para economizar recursos)
   
-  console.log('🏓 Auto-ping iniciado (10 min intervals) - Prevenção contra hibernação');
+  console.log('🏓 Auto-ping iniciado (15 min intervals) - Prevenção contra hibernação');
 }
 
 function pararAutoPing() {
@@ -389,6 +414,79 @@ function pararAutoPing() {
     clearInterval(autoPingInterval);
     autoPingInterval = null;
     console.log('🛑 Auto-ping parado');
+  }
+}
+
+// Função para limpar cache e reduzir uso de memória
+function limparCacheMemoria() {
+  try {
+    console.log('🧹 Iniciando limpeza de cache...');
+    
+    // Limpar require cache (exceto módulos principais)
+    const requiredModules = Object.keys(require.cache);
+    let cacheCleared = 0;
+    
+    requiredModules.forEach(modulePath => {
+      // Manter apenas módulos essenciais e não limpar node_modules
+      if (!modulePath.includes('node_modules') && 
+          !modulePath.includes('index.js') &&
+          !modulePath.endsWith('.node')) {
+        delete require.cache[modulePath];
+        cacheCleared++;
+      }
+    });
+    
+    // Limpar variáveis globais desnecessárias
+    if (typeof global.Buffer !== 'undefined') {
+      // Força limpeza de buffers não utilizados
+      if (global.gc) {
+        global.gc();
+      }
+    }
+    
+    console.log(`🧹 Cache limpo: ${cacheCleared} módulos removidos`);
+    
+    // Log de uso de memória após limpeza
+    const memoryAfter = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+    console.log(`💾 Memória após limpeza: ${memoryAfter}MB`);
+    
+  } catch (error) {
+    console.log('⚠️ Erro na limpeza de cache:', error.message);
+  }
+}
+
+// Função para limpar PDFs antigos e liberar espaço
+function limparPDFsAntigos() {
+  try {
+    const pdfDir = path.join(__dirname, 'pdfs');
+    
+    if (!fs.existsSync(pdfDir)) {
+      return;
+    }
+    
+    const arquivos = fs.readdirSync(pdfDir);
+    const agora = Date.now();
+    let arquivosRemovidos = 0;
+    
+    arquivos.forEach(arquivo => {
+      if (arquivo.endsWith('.pdf')) {
+        const caminhoArquivo = path.join(pdfDir, arquivo);
+        const stats = fs.statSync(caminhoArquivo);
+        
+        // Remover PDFs com mais de 1 hora (3600000 ms)
+        if (agora - stats.mtime.getTime() > 3600000) {
+          fs.unlinkSync(caminhoArquivo);
+          arquivosRemovidos++;
+        }
+      }
+    });
+    
+    if (arquivosRemovidos > 0) {
+      console.log(`🗑️ PDFs antigos removidos: ${arquivosRemovidos} arquivos`);
+    }
+    
+  } catch (error) {
+    console.log('⚠️ Erro na limpeza de PDFs:', error.message);
   }
 }
 
@@ -3648,7 +3746,7 @@ app.get("/health", (req, res) => {
     },
     service_monitoring: {
       auto_ping_active: !!autoPingInterval,
-      next_ping_in_minutes: autoPingInterval ? 10 : 0
+      next_ping_in_minutes: autoPingInterval ? 15 : 0
     },
     endpoints_count: app._router ? app._router.stack.length : 0
   });
