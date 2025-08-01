@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  # PIX Service
+  pix-service:
+    build:
+      context: .
+      dockerfile: docker/pix/Dockerfile
+    container_name: pix-service
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - SICREDI_ENV=${SICREDI_ENV:-homolog}
+      - SICREDI_HOMOLOG_CLIENT_ID=${SICREDI_HOMOLOG_CLIENT_ID}
+      - SICREDI_HOMOLOG_CLIENT_SECRET=${SICREDI_HOMOLOG_CLIENT_SECRET}
+      - SICREDI_HOMOLOG_PIX_KEY=${SICREDI_HOMOLOG_PIX_KEY}
+      - SICREDI_PROD_CLIENT_ID=${SICREDI_PROD_CLIENT_ID}
+      - SICREDI_PROD_CLIENT_SECRET=${SICREDI_PROD_CLIENT_SECRET}
+      - SICREDI_PROD_PIX_KEY=${SICREDI_PROD_PIX_KEY}
+      - WHATSAPP_SERVICE_URL=http://whatsapp-service:3001
+    volumes:
+      - ./certs:/app/certs:ro
+      - pix-logs:/app/logs
+    networks:
+      - pix-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+        reservations:
+          memory: 150M
+
+  # WhatsApp Service
+  whatsapp-service:
+    build:
+      context: .
+      dockerfile: docker/whatsapp/Dockerfile
+    container_name: whatsapp-service
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - WHATSAPP_ENABLED=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+    volumes:
+      - whatsapp-session:/app/whatsapp-session
+      - whatsapp-logs:/app/logs
+    networks:
+      - pix-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 600M
+        reservations:
+          memory: 300M
+    # Capacidades necessárias para Chrome
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+
+  # Gateway/Proxy Service (opcional, usando Nginx)
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - nginx-logs:/var/log/nginx
+      - letsencrypt-certs:/etc/letsencrypt:ro
+    networks:
+      - pix-network
+    depends_on:
+      - pix-service
+      - whatsapp-service
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+        reservations:
+          memory: 50M
+
+volumes:
+  pix-logs:
+    driver: local
+  whatsapp-logs:
+    driver: local
+  whatsapp-session:
+    driver: local
+  nginx-logs:
+    driver: local
+  letsencrypt-certs:
+    driver: local
+
+networks:
+  pix-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

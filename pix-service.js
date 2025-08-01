@@ -583,6 +583,34 @@ app.get("/consultar-pix-vencimento/:txid", async (req, res) => {
   }
 });
 
+// Endpoint integrado PIX + WhatsApp (para AppSheet)
+app.post("/appsheet-whatsapp", async (req, res) => {
+  try {
+    const { pagamento, numero, evento, tag_evento, categoria } = req.body;
+    
+    console.log('📱 AppSheet WhatsApp request recebido (PIX Service)');
+    
+    // Resposta imediata para AppSheet
+    res.status(200).json({
+      status: "recebido",
+      timestamp: new Date().toISOString(),
+      processando: true
+    });
+
+    // Processar assincronamente
+    if (pagamento && numero) {
+      processarPixWhatsApp(pagamento, numero, null, evento, tag_evento, categoria);
+    }
+
+  } catch (error) {
+    console.error("❌ Erro AppSheet WhatsApp:", error.message);
+    res.status(500).json({
+      erro: "Falha no processamento AppSheet",
+      detalhes: error.message
+    });
+  }
+});
+
 // Endpoint para solicitar envio de WhatsApp (integração com WhatsApp Service)
 app.post("/solicitar-whatsapp", async (req, res) => {
   try {
@@ -595,7 +623,7 @@ app.post("/solicitar-whatsapp", async (req, res) => {
     }
 
     // URL do WhatsApp Service (será configurada via env var)
-    const whatsappServiceUrl = process.env.WHATSAPP_SERVICE_URL || "http://localhost:3001";
+    const whatsappServiceUrl = process.env.WHATSAPP_SERVICE_URL || "http://whatsapp-service:3001";
     
     const mensagem = `💰 *Informações de Pagamento PIX*
 
@@ -636,6 +664,99 @@ ${pixData.dataVencimento ? `📅 Vencimento: ${pixData.dataVencimento}` : '⚡ P
     });
   }
 });
+
+// Função assíncrona para processar PIX + WhatsApp integrado
+async function processarPixWhatsApp(pagamento, numero, dataVencimento, evento, tag_evento, categoria) {
+  try {
+    console.log('🔗 Processando PIX + WhatsApp integrado...');
+    
+    // 1. Gerar PIX (já estamos no PIX service)
+    const validacao = validarPagamento(pagamento);
+    if (!validacao.valido) {
+      throw new Error('Validação PIX falhou: ' + validacao.erro);
+    }
+
+    const txid = gerarTxid();
+    const valor = parseFloat(pagamento["Valor Pix"]).toFixed(2);
+
+    const pixPayload = {
+      calendario: dataVencimento ? {
+        dataDeVencimento: dataVencimento,
+        validadeAposVencimento: 30
+      } : {
+        expiracao: 3600
+      },
+      devedor: {
+        nome: pagamento.Pagador,
+        cpf: pagamento.Inscricao?.replace(/\D/g, "") || "00000000000"
+      },
+      valor: {
+        original: valor
+      },
+      chave: CONFIG.pix_key,
+      solicitacaoPagador: pagamento.descricao_pagador || `Pagamento ${pagamento["Row ID"]}`
+    };
+
+    // Adicionar informações de evento
+    if (evento || tag_evento || categoria) {
+      pixPayload.infoAdicionais = [];
+      
+      if (evento) pixPayload.infoAdicionais.push({ nome: "evento", valor: evento });
+      if (tag_evento) pixPayload.infoAdicionais.push({ nome: "tag_evento", valor: tag_evento });
+      if (categoria) pixPayload.infoAdicionais.push({ nome: "categoria", valor: categoria });
+    }
+
+    const endpoint = dataVencimento ? 'cobv' : 'cob';
+    const url = `${CONFIG.api_url}/${endpoint}/${txid}`;
+    
+    const pixResponse = await fazerRequisicaoSicredi(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      data: pixPayload
+    });
+
+    console.log(`✅ PIX gerado: ${txid}`);
+
+    // 2. Enviar WhatsApp
+    const whatsappServiceUrl = process.env.WHATSAPP_SERVICE_URL || "http://whatsapp-service:3001";
+    
+    const mensagem = `💰 *Informações de Pagamento PIX*
+
+📋 *Dados do Pagamento:*
+💵 Valor: R$ ${valor}
+👤 Pagador: ${pagamento.Pagador}
+🆔 ID: ${txid}
+${dataVencimento ? `📅 Vencimento: ${dataVencimento}` : '⚡ Pagamento Imediato'}
+${evento ? `🏷️ Evento: ${evento}` : ''}
+${categoria ? `📂 Categoria: ${categoria}` : ''}
+
+📱 *PIX Copia e Cola:*
+\`${pixResponse.data.pixCopiaECola}\`
+
+✅ Pagamento gerado com sucesso!
+🏦 Via Sicredi PIX`;
+
+    const whatsappResponse = await axios.post(`${whatsappServiceUrl}/enviar-mensagem`, {
+      numero: numero,
+      mensagem: mensagem
+    }, {
+      timeout: 30000
+    });
+
+    if (whatsappResponse.data.sucesso) {
+      console.log('✅ WhatsApp enviado com sucesso');
+    } else {
+      console.log('⚠️ Falha no envio WhatsApp:', whatsappResponse.data.erro);
+    }
+
+    console.log('🎉 Operação PIX + WhatsApp concluída');
+
+  } catch (error) {
+    console.error('❌ Erro na operação PIX + WhatsApp:', error.message);
+  }
+}
 
 // =====================================================
 // INICIALIZAÇÃO DO SERVIDOR
