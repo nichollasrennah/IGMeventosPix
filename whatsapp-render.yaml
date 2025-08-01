@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: whatsapp-service
+    runtime: node
+    buildCommand: cp whatsapp-package.json package.json && npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WHATSAPP_ENABLED
+        value: true
+      - key: PORT
+        value: 3001

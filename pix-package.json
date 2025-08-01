@@ -1,0 +1,14 @@
+{
+  "name": "pix-service",
+  "version": "1.0.0",
+  "main": "pix-service.js",
+  "scripts": {
+    "start": "node --max-old-space-size=300 pix-service.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.7",
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2"
+  }
+}

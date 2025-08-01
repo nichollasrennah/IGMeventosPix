@@ -1,0 +1,28 @@
+# Use Node.js 18 LTS
+FROM node:18-slim
+
+# Criar diretório da aplicação
+WORKDIR /usr/src/app
+
+# Copiar package.json específico do PIX Service
+COPY pix-package.json ./package.json
+
+# Instalar dependências
+RUN npm ci --only=production
+
+# Copiar código da aplicação e certificados
+COPY pix-service.js ./index.js
+COPY certs/ ./certs/
+
+# Criar diretórios necessários
+RUN mkdir -p certs
+
+# Definir variáveis de ambiente
+ENV NODE_ENV=production
+ENV NODE_OPTIONS="--max-old-space-size=300"
+
+# Expor porta
+EXPOSE 3000
+
+# Comando para iniciar a aplicação
+CMD ["npm", "start"]

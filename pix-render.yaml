@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: pix-service
+    runtime: node
+    buildCommand: cp pix-package.json package.json && npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+    # Adicione suas variáveis de ambiente Sicredi:
+    # - key: SICREDI_ENV
+    #   value: homolog
+    # - key: SICREDI_HOMOLOG_CLIENT_ID
+    #   value: seu_client_id
+    # - key: SICREDI_HOMOLOG_CLIENT_SECRET  
+    #   value: seu_client_secret
+    # - key: SICREDI_HOMOLOG_PIX_KEY
+    #   value: sua_chave_pix
+    # - key: WHATSAPP_SERVICE_URL
+    #   value: https://whatsapp-service-url.onrender.com
