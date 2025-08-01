@@ -94,6 +94,7 @@ let whatsappClient = null;
 let whatsappReady = false;
 let currentQRCode = null;
 let whatsappInitializing = false;
+let keepAliveInterval = null;
 
 // Inicializar cliente WhatsApp
 function inicializarWhatsApp() {
@@ -194,6 +195,9 @@ function inicializarWhatsApp() {
         }).catch(err => {
           console.log('📞 WhatsApp conectado (informações não disponíveis)');
         });
+        
+        // Configurar keep-alive para manter conexão ativa
+        iniciarKeepAlive();
       });
 
       whatsappClient.on('loading_screen', (percent, message) => {
@@ -208,6 +212,9 @@ function inicializarWhatsApp() {
         console.log('❌ WhatsApp desconectado:', reason);
         whatsappReady = false;
         currentQRCode = null;
+        
+        // Parar keep-alive quando desconectado
+        pararKeepAlive();
         
         // Tratamento específico para diferentes tipos de desconexão
         if (reason === 'LOGOUT') {
@@ -297,6 +304,91 @@ function inicializarWhatsApp() {
     }
   } else {
     console.log('📱 WhatsApp desabilitado (WHATSAPP_ENABLED != true)');
+  }
+}
+
+// Função para manter WhatsApp ativo
+function iniciarKeepAlive() {
+  // Limpar interval anterior se existir
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+  }
+  
+  // Enviar ping a cada 5 minutos para manter conexão ativa
+  keepAliveInterval = setInterval(async () => {
+    try {
+      if (whatsappClient && whatsappReady) {
+        // Verificar estado da conexão
+        const state = await whatsappClient.getState();
+        console.log(`💓 WhatsApp Keep-Alive - Estado: ${state}`);
+        
+        // Se desconectado, tentar reconectar
+        if (state !== 'CONNECTED') {
+          console.log('⚠️ WhatsApp desconectado durante keep-alive, tentando reconectar...');
+          whatsappReady = false;
+          inicializarWhatsApp();
+        }
+      }
+    } catch (error) {
+      console.log('⚠️ Erro no keep-alive WhatsApp:', error.message);
+      whatsappReady = false;
+    }
+  }, 5 * 60 * 1000); // 5 minutos
+  
+  console.log('💓 Keep-alive WhatsApp iniciado (5 min intervals)');
+}
+
+// Função para parar keep-alive
+function pararKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    console.log('💔 Keep-alive WhatsApp parado');
+  }
+}
+
+// Função para auto-ping e prevenir hibernação do serviço
+let autoPingInterval = null;
+
+function iniciarAutoPing() {
+  // Limpar interval anterior se existir
+  if (autoPingInterval) {
+    clearInterval(autoPingInterval);
+  }
+  
+  // Auto-ping a cada 10 minutos para manter serviço ativo
+  autoPingInterval = setInterval(async () => {
+    try {
+      const uptime = process.uptime();
+      console.log(`🏓 Auto-ping - Serviço ativo há ${Math.floor(uptime)}s`);
+      
+      // Verificar uso de memória e alertar se muito alto
+      const memoryUsage = process.memoryUsage();
+      const memoryMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
+      
+      if (memoryMB > 500) {
+        console.log(`⚠️ Uso de memória alto: ${memoryMB}MB`);
+      }
+      
+      // Se WhatsApp estiver habilitado mas não conectado, tentar reconectar
+      if (process.env.WHATSAPP_ENABLED === 'true' && !whatsappReady && !whatsappInitializing) {
+        console.log('🔄 Auto-ping detectou WhatsApp desconectado, tentando reconectar...');
+        inicializarWhatsApp();
+      }
+      
+    } catch (error) {
+      console.log('⚠️ Erro no auto-ping:', error.message);
+    }
+  }, 10 * 60 * 1000); // 10 minutos
+  
+  console.log('🏓 Auto-ping iniciado (10 min intervals) - Prevenção contra hibernação');
+}
+
+function pararAutoPing() {
+  if (autoPingInterval) {
+    clearInterval(autoPingInterval);
+    autoPingInterval = null;
+    console.log('🛑 Auto-ping parado');
   }
 }
 
@@ -1096,40 +1188,7 @@ async function fazerRequisicaoSicredi(url, options, tentativa = 1) {
   }
 }
 
-// =====================================================
-// ENDPOINT DE HEALTH CHECK ATUALIZADO
-// =====================================================
-app.get("/health", (req, res) => {
-  res.json({ 
-    status: "ok", 
-    timestamp: new Date().toISOString(),
-    ambiente: {
-      atual: AMBIENTE_ATUAL,
-      producao: isProducao
-    },
-    configuracao: {
-      api_url: CONFIG.api_url,
-      token_url: CONFIG.token_url,
-      client_id_configurado: !!CONFIG.client_id,
-      client_secret_configurado: !!CONFIG.client_secret,
-      pix_key_configurado: !!CONFIG.pix_key,
-      ssl_verify: CONFIG.ssl_verify,
-      timeout: CONFIG.timeout,
-      retry_attempts: CONFIG.retry_attempts,
-      token_expiracao_horas: 48,
-      token_expiracao_segundos: 172800
-    },
-    certificates: {
-      cert: !!certificates.cert,
-      key: !!certificates.key,
-      ca: !!certificates.ca
-    },
-    validacao: {
-      chave_pix_obrigatoria: isProducao,
-      configuracao_valida: !!CONFIG.client_id && !!CONFIG.client_secret && (isProducao ? !!CONFIG.pix_key : true)
-    }
-  });
-});
+// (Health endpoint removido - usando o endpoint melhorado abaixo)
 
 // =====================================================
 // ENDPOINT PARA TROCAR AMBIENTE EM TEMPO DE EXECUÇÃO
@@ -3564,6 +3623,47 @@ app.get("/relatorio-cobrancas", async (req, res) => {
 });
 
 // =====================================================
+// ENDPOINT - HEALTH CHECK MELHORADO
+// =====================================================
+
+app.get("/health", (req, res) => {
+  const uptime = process.uptime();
+  const memoryUsage = process.memoryUsage();
+  
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(uptime),
+    uptime_formatted: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${Math.floor(uptime % 60)}s`,
+    memory: {
+      used: Math.round(memoryUsage.heapUsed / 1024 / 1024) + 'MB',
+      total: Math.round(memoryUsage.heapTotal / 1024 / 1024) + 'MB',
+      external: Math.round(memoryUsage.external / 1024 / 1024) + 'MB'
+    },
+    environment: AMBIENTE_ATUAL,
+    whatsapp: {
+      enabled: process.env.WHATSAPP_ENABLED === 'true',
+      connected: whatsappReady,
+      keep_alive_active: !!keepAliveInterval
+    },
+    service_monitoring: {
+      auto_ping_active: !!autoPingInterval,
+      next_ping_in_minutes: autoPingInterval ? 10 : 0
+    },
+    endpoints_count: app._router ? app._router.stack.length : 0
+  });
+});
+
+// Endpoint de keep-alive para evitar hibernação do serviço
+app.get("/ping", (req, res) => {
+  res.status(200).json({
+    message: "pong",
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime())
+  });
+});
+
+// =====================================================
 // ENDPOINT - WHATSAPP PARA APPSHEET (OTIMIZADO)
 // =====================================================
 
@@ -4403,5 +4503,49 @@ app.listen(PORT, () => {
   setTimeout(() => {
     inicializarWhatsApp();
   }, 2000); // Aguardar 2 segundos para estabilizar servidor
+
+  // Iniciar auto-ping para evitar hibernação do serviço
+  iniciarAutoPing();
+});
+
+// Graceful shutdown - limpar intervalos ao parar o serviço
+process.on('SIGTERM', async () => {
+  console.log('🔄 Recebido SIGTERM, iniciando shutdown graceful...');
+  
+  pararKeepAlive();
+  pararAutoPing();
+  
+  if (whatsappClient) {
+    try {
+      console.log('📱 Desconectando WhatsApp...');
+      await whatsappClient.destroy();
+      console.log('✅ WhatsApp desconectado');
+    } catch (error) {
+      console.log('⚠️ Erro ao desconectar WhatsApp:', error.message);
+    }
+  }
+  
+  console.log('👋 Servidor finalizado');
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('🔄 Recebido SIGINT, iniciando shutdown graceful...');
+  
+  pararKeepAlive();
+  pararAutoPing();
+  
+  if (whatsappClient) {
+    try {
+      console.log('📱 Desconectando WhatsApp...');
+      await whatsappClient.destroy();
+      console.log('✅ WhatsApp desconectado');
+    } catch (error) {
+      console.log('⚠️ Erro ao desconectar WhatsApp:', error.message);
+    }
+  }
+  
+  console.log('👋 Servidor finalizado');
+  process.exit(0);
 });
 
