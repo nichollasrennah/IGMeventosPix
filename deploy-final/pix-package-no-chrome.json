@@ -1,0 +1,31 @@
+{
+  "name": "pix-service",
+  "version": "2.0.0",
+  "description": "PIX Service Sicredi com Relatórios PDF (sem Chrome) - Igreja em Mossoro",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "body-parser": "^1.20.3",
+    "express": "^4.21.0",
+    "pdfkit": "^0.15.0",
+    "qrcode": "^1.5.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "pix",
+    "sicredi",
+    "payment",
+    "api",
+    "reports",
+    "pdf",
+    "pdfkit"
+  ],
+  "author": "Igreja em Mossoro",
+  "license": "MIT"
+}
