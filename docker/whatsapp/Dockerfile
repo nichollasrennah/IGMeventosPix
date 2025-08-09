@@ -31,11 +31,12 @@ RUN groupadd -r whatsapp && useradd -r -g whatsapp -G audio,video whatsapp \
 # Definir diretório de trabalho
 WORKDIR /app
 
-# Copiar package.json específico do WhatsApp
+# Copiar package.json e package-lock.json
 COPY whatsapp-package.json ./package.json
+COPY package-lock.json ./package-lock.json
 
 # Instalar dependências
-RUN npm ci --only=production && \
+RUN npm install --omit=dev && \
     npm cache clean --force
 
 # Copiar código da aplicação
